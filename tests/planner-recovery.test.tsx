@@ -29,7 +29,7 @@ describe("planner recovery and concurrent edits", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
     const user = userEvent.setup();
     render(<PlannerApp />);
-    await user.click(screen.getByRole("button", { name: /02 Budget/ }));
+    await user.click(screen.getByRole("button", { name: /Budget/ }));
     await user.click(await screen.findByRole("button", { name: /Ask Gemini for trade-offs/ }));
     act(() => { savePlan({ ...plan, city: "Pune" }, getPlanRevision()); });
     await act(async () => { finish(Response.json({ source: "gemini", plan })); });
