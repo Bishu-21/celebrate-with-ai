@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+dist
+coverage
+.vercel
+.env
+.env.local
+.env.*.local
+env.local
+*.tsbuildinfo
+npm-debug.log*
+
+# Local challenge notes. They are not part of the product.
+explainer.md
+gen-ai.md
+video-criteria.md

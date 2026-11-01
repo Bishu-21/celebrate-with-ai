@@ -1,0 +1,177 @@
+import { overageInr, proposeTradeoffs, scaleCateringForGuests } from "@/domain/budget";
+import { addDays, isRealIsoDate } from "@/domain/money";
+import { scheduleTasks } from "@/domain/timeline";
+import type { ConstraintDelta, EventPlan } from "@/domain/types";
+
+const MONTHS: Record<string, number> = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+};
+
+function inrFromWords(amount: number, unit: string | undefined): number {
+  const scale = unit?.toLowerCase() ?? "";
+  if (scale.startsWith("lakh") || scale.startsWith("lac")) return Math.round(amount * 100_000);
+  if (scale.startsWith("crore")) return Math.round(amount * 10_000_000);
+  return Math.round(amount);
+}
+
+function dateInMonth(eventDate: string, monthName: string): string | undefined {
+  if (!isRealIsoDate(eventDate)) return undefined;
+  const month = MONTHS[monthName.toLowerCase()];
+  if (!month) return undefined;
+  const year = Number(eventDate.slice(0, 4));
+  const day = Number(eventDate.slice(8, 10));
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const safeDay = Math.min(day, lastDay);
+  return `${year}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
+export function parseConstraintChange(text: string, currentBudgetInr: number, eventDate = ""): ConstraintDelta {
+  const guestMore = /(\d+)\s+more\s+(?:guests|people|persons|folks)/i.exec(text) ?? /inviting\s+(\d+)\s+more/i.exec(text);
+  const guestAdd = /add\s+(\d+)\s+(?:guests|people|persons)/i.exec(text);
+  const guestFewer = /(\d+)\s+fewer\s+(?:guests|people|persons)/i.exec(text) ?? /remove\s+(\d+)\s+(?:guests|people)/i.exec(text);
+  const guestAbsolute = /(?:guests?|headcount|people)\s+(?:is|are)\s+now\s+(\d+)/i.exec(text);
+  const guestDelta = guestMore ? Number(guestMore[1]) : guestAdd ? Number(guestAdd[1]) : guestFewer ? -Number(guestFewer[1]) : 0;
+
+  const percent = /budget\s+(?:dropped|reduced|cut|down)\s+by\s+(\d+(?:\.\d+)?)\s*%/i.exec(text);
+  const raisedPercent = /budget\s+(?:increased|raised|up)\s+by\s+(\d+(?:\.\d+)?)\s*%/i.exec(text);
+  const money = /budget\s+(dropped|reduced|cut|down|increased|raised|up)\s+by\s+[^0-9]*([0-9][0-9,]*(?:\.\d+)?)(?:\s*(lakh|lac|crore))?/i.exec(text);
+  const absoluteMoney = /budget\s+(?:is\s+now|(?:has\s+been\s+|is\s+)?(?:increased|raised|dropped|reduced|cut|changed)\s+to)\s+[^0-9]*([0-9][0-9,]*(?:\.\d+)?)\s*(lakhs?|lacs?|crores?)?/i.exec(text);
+
+  let budgetDeltaInr = 0;
+  let sawBudgetDelta = false;
+  if (percent) {
+    budgetDeltaInr = -Math.round(currentBudgetInr * (Number(percent[1]) / 100));
+    sawBudgetDelta = true;
+  } else if (raisedPercent) {
+    budgetDeltaInr = Math.round(currentBudgetInr * (Number(raisedPercent[1]) / 100));
+    sawBudgetDelta = true;
+  } else if (money) {
+    const amount = inrFromWords(Number(money[2].replace(/[^\d.]/g, "")), money[3]);
+    const raised = /^(increased|raised|up)$/i.test(money[1]);
+    budgetDeltaInr = (raised ? 1 : -1) * amount;
+    sawBudgetDelta = true;
+  }
+
+  const absoluteBudgetInr = absoluteMoney ? inrFromWords(Number(absoluteMoney[1].replace(/[^\d.]/g, "")), absoluteMoney[2]) : undefined;
+
+  const weeksEarlier = /(\d+)\s+weeks?\s+earlier/i.exec(text);
+  const daysEarlier = /(\d+)\s+days?\s+earlier/i.exec(text);
+  const weeksLater = /(\d+)\s+weeks?\s+later/i.exec(text);
+  const daysLater = /(\d+)\s+days?\s+later/i.exec(text);
+  const dated = /(?:event|date|party)\s+(?:is|on|moves to)\s+(\d{4}-\d{2}-\d{2})/i.exec(text);
+  const monthNamed = /(?:move|moving|reschedule|shift|party|event|date)\s+(?:the\s+)?(?:party|event|date)?\s*(?:to|in)\s+(january|february|march|april|may|june|july|august|september|october|november|december)/i.exec(text);
+  const monthDate = monthNamed ? dateInMonth(eventDate, monthNamed[1]) : undefined;
+  const sawShift = Boolean(weeksEarlier || daysEarlier || weeksLater || daysLater || monthDate);
+  const dayShift = weeksEarlier
+    ? -7 * Number(weeksEarlier[1])
+    : daysEarlier
+      ? -Number(daysEarlier[1])
+      : weeksLater
+        ? 7 * Number(weeksLater[1])
+        : daysLater
+          ? Number(daysLater[1])
+          : 0;
+
+  const conflicts: string[] = [];
+  if (guestAbsolute && guestDelta !== 0) conflicts.push("guest count is both a change and a new total");
+  if (absoluteBudgetInr !== undefined && sawBudgetDelta) conflicts.push("budget is both a change and a new total");
+  if (dated && sawShift) conflicts.push("the date is both a shift and a calendar day");
+  if (monthDate && (weeksEarlier || daysEarlier || weeksLater || daysLater)) conflicts.push("the date is both a month and a day count");
+  if (dated && !isRealIsoDate(dated[1])) conflicts.push("the new date is not a real calendar day");
+
+  const delta: ConstraintDelta = { guestDelta, budgetDeltaInr, dayShift };
+  if (guestAbsolute && guestDelta === 0) delta.absoluteGuestCount = Number(guestAbsolute[1]);
+  if (absoluteBudgetInr !== undefined && !sawBudgetDelta) delta.absoluteBudgetInr = absoluteBudgetInr;
+  if (dated && !monthDate && !weeksEarlier && !daysEarlier && !weeksLater && !daysLater && isRealIsoDate(dated[1])) delta.absoluteEventDate = dated[1];
+  else if (monthDate && !dated && !weeksEarlier && !daysEarlier && !weeksLater && !daysLater) delta.absoluteEventDate = monthDate;
+  if (conflicts.length) delta.ambiguous = `This note is ambiguous because the ${conflicts.join(" and the ")}.`;
+  return delta;
+}
+
+export function mergeConstraintDelta(parsed: ConstraintDelta, extracted: ConstraintDelta | null): ConstraintDelta {
+  if (!extracted) return parsed;
+  const parsedHasChange = Boolean(
+    parsed.guestDelta || parsed.absoluteGuestCount || parsed.budgetDeltaInr || parsed.absoluteBudgetInr || parsed.dayShift || parsed.absoluteEventDate,
+  );
+  if (extracted.ambiguous && !parsedHasChange) return extracted;
+  if (parsed.ambiguous) return parsed;
+  const next: ConstraintDelta = { ...parsed };
+  if (!next.guestDelta && !next.absoluteGuestCount) {
+    if (extracted.absoluteGuestCount) next.absoluteGuestCount = extracted.absoluteGuestCount;
+    else if (extracted.guestDelta) next.guestDelta = extracted.guestDelta;
+  }
+  if (!next.budgetDeltaInr && next.absoluteBudgetInr === undefined) {
+    if (extracted.absoluteBudgetInr !== undefined) next.absoluteBudgetInr = extracted.absoluteBudgetInr;
+    else if (extracted.budgetDeltaInr) next.budgetDeltaInr = extracted.budgetDeltaInr;
+  }
+  if (!next.dayShift && !next.absoluteEventDate) {
+    if (extracted.absoluteEventDate && isRealIsoDate(extracted.absoluteEventDate)) next.absoluteEventDate = extracted.absoluteEventDate;
+    else if (extracted.dayShift) next.dayShift = extracted.dayShift;
+  }
+  return next;
+}
+
+export function revisePlan(
+  plan: EventPlan,
+  delta: ConstraintDelta,
+  today: string,
+): { plan: EventPlan; changes: string[]; warning: string | null } {
+  if (delta.ambiguous) {
+    return { plan, changes: [], warning: delta.ambiguous };
+  }
+  if (!isRealIsoDate(today) || !isRealIsoDate(plan.eventDate)) {
+    return { plan, changes: [], warning: "The event date needs to be a real calendar day before it can move." };
+  }
+
+  const nextGuestCount = Math.max(1, delta.absoluteGuestCount ?? plan.guestCount + delta.guestDelta);
+  const nextBudget = Math.max(10_000, delta.absoluteBudgetInr ?? plan.budgetInr + delta.budgetDeltaInr);
+  const nextDate = delta.absoluteEventDate ?? addDays(plan.eventDate, delta.dayShift);
+  const lines = scaleCateringForGuests(plan.budgetBreakdown, plan.guestCount, nextGuestCount);
+  const scenarios = proposeTradeoffs(lines, nextBudget, plan.priorities);
+  const over = overageInr(lines, nextBudget);
+
+  const changes = [
+    nextGuestCount === plan.guestCount ? "" : `Guest count ${plan.guestCount} → ${nextGuestCount}.`,
+    nextBudget === plan.budgetInr ? "" : `Budget ${plan.budgetInr} → ${nextBudget}.`,
+    nextDate === plan.eventDate ? "" : `Event date ${plan.eventDate} → ${nextDate}.`,
+    over > 0 ? `Projected spend is ${over} rupees over the new budget. No cut was applied.` : "",
+  ].filter(Boolean);
+
+  const timelineTasks = scheduleTasks(
+    plan.timelineTasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      ownerHint: task.ownerHint,
+      durationDays: task.durationDays,
+      dependencies: task.dependencies,
+      priority: task.priority,
+      status: task.status,
+      note: task.note,
+    })),
+    nextDate,
+    today,
+  );
+  const doneIds = new Set(plan.timelineTasks.filter((task) => task.status === "done").map((task) => task.id));
+  for (const task of timelineTasks) {
+    if (doneIds.has(task.id)) {
+      task.status = "done";
+      task.overdue = false;
+    }
+  }
+
+  return {
+    changes,
+    warning: over > 0 ? "Choose a trade-off before the plan fits the new budget. Confirmed quotes were left as entered." : null,
+    plan: {
+      ...plan,
+      guestCount: nextGuestCount,
+      budgetInr: nextBudget,
+      eventDate: nextDate,
+      budgetBreakdown: lines,
+      timelineTasks,
+      tradeOffScenarios: scenarios,
+      vendorBriefs: plan.vendorBriefs.map((brief) => ({ ...brief, guestCoverage: nextGuestCount })),
+    },
+  };
+}
