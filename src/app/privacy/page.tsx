@@ -10,7 +10,7 @@ export default function PrivacyPage() {
     <main id="planner-main" className="mx-auto max-w-2xl px-4 py-24">
       <h1 className="font-serif text-5xl">Privacy</h1>
       <div className="glass mt-8 space-y-3 rounded-[28px] p-6 text-sm leading-6 text-muted-foreground">
-        <p>Marigold stores the current plan in this browser. There is no account.</p>
+        <p>Marigold stores the current plan in this browser. There is no account. Guest names and emails stay in that browser copy. Planning requests send counts, not the guest list, when a count is enough.</p>
         <p>
           When you generate, revise, ask for trade-offs, reschedule, or compare vendors, the relevant plan text is sent from the server to Google Gemini using a server-side API key. The key is not included in the browser bundle.
         </p>

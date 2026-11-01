@@ -1,7 +1,7 @@
 import { allocateBudget, proposeTradeoffs } from "@/domain/budget";
 import { scheduleTasks, type TaskDraft } from "@/domain/timeline";
+import { localVendorQuestions } from "@/domain/vendors";
 import {
-  CATEGORY_LABELS,
   type Category,
   type ChecklistItem,
   type EventBrief,
@@ -114,15 +114,6 @@ function tasksFor(occasion: EventBrief["occasion"]): Array<Omit<TaskDraft, "depe
   });
 }
 
-function questionsFor(category: Category): string[] {
-  return [
-    `What is included for ${CATEGORY_LABELS[category].toLowerCase()}, and what is billed extra?`,
-    "How many guests does this quote cover, and what happens if the count changes?",
-    "Which taxes, service charges, overtime, or transport fees are not in the headline price?",
-    "What is the payment schedule, and what is refundable if the date moves?",
-  ];
-}
-
 function vendorBriefs(brief: EventBrief, budgetLines: EventPlan["budgetBreakdown"]): VendorBrief[] {
   return (["venue", "catering", "decor", "photography", "entertainment"] as Category[]).map((category) => ({
     id: `brief-${category}`,
@@ -130,7 +121,13 @@ function vendorBriefs(brief: EventBrief, budgetLines: EventPlan["budgetBreakdown
     mustHaves: brief.notes.trim() || `Suitable for a ${brief.vibe} ${brief.occasion} in ${brief.city}.`,
     guestCoverage: brief.guestCount,
     budgetCapInr: budgetLines.find((line) => line.category === category)?.amountInr ?? 0,
-    questions: questionsFor(category),
+    questions: localVendorQuestions({
+      category,
+      mustHaves: brief.notes,
+      guestCoverage: brief.guestCount,
+      city: brief.city,
+      occasion: brief.occasion,
+    }),
   }));
 }
 

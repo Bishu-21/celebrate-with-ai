@@ -89,6 +89,28 @@ export function parseConstraintChange(text: string, currentBudgetInr: number, ev
   return delta;
 }
 
+export function constraintDeltaIsSettled(delta: ConstraintDelta): boolean {
+  if (delta.ambiguous) return false;
+  return Boolean(
+    delta.guestDelta ||
+      delta.absoluteGuestCount ||
+      delta.budgetDeltaInr ||
+      delta.absoluteBudgetInr !== undefined ||
+      delta.dayShift ||
+      delta.absoluteEventDate,
+  );
+}
+
+export function advisoryScope(
+  before: Pick<EventPlan, "budgetInr" | "guestCount" | "eventDate">,
+  after: Pick<EventPlan, "budgetInr" | "guestCount" | "eventDate">,
+): { tradeoffs: boolean; timeline: boolean } {
+  return {
+    tradeoffs: before.budgetInr !== after.budgetInr || before.guestCount !== after.guestCount,
+    timeline: before.eventDate !== after.eventDate,
+  };
+}
+
 export function mergeConstraintDelta(parsed: ConstraintDelta, extracted: ConstraintDelta | null): ConstraintDelta {
   if (!extracted) return parsed;
   const parsedHasChange = Boolean(

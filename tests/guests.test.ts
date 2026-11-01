@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { headcount, isValidGuestEmail, isValidGuestName } from "@/domain/guests";
+import { guestSummary, headcount, isValidGuestEmail, isValidGuestName } from "@/domain/guests";
 import type { Guest } from "@/domain/types";
 
 const guests: Guest[] = [
@@ -12,6 +12,7 @@ const guests: Guest[] = [
 describe("guests", () => {
   it("counts yes and maybe party sizes and ignores declines", () => {
     expect(headcount(guests)).toBe(6);
+    expect(guestSummary(guests)).toEqual({ invited: 1, yes: 1, no: 1, maybe: 1, headcount: 6 });
   });
 
   it("rejects oversized names and broken emails", () => {

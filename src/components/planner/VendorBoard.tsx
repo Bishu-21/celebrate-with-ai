@@ -102,10 +102,11 @@ export function VendorBoard({
       >
         Compare quotations
       </Button>
-      {warning ? <p className="mt-3 text-sm text-gold">{warning}</p> : null}
+      {warning ? <p className="mt-3 text-sm text-gold" role="status">{warning}</p> : null}
       {rows.length ? (
         <div className="glass mt-4 overflow-x-auto rounded-[28px] p-4">
           <table className="w-full min-w-[40rem] text-sm">
+            <caption className="sr-only">Comparison of the quotations you entered. Coverage and cap are calculated in the app.</caption>
             <thead>
               <tr className="text-left text-xs uppercase tracking-widest text-muted-foreground">
                 <th scope="col" className="pb-2 pr-4">Vendor</th>

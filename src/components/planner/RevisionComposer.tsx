@@ -26,12 +26,12 @@ export function RevisionComposer({
       }}
     >
       <h2 className="font-serif text-3xl">Revise this plan</h2>
-      <p className="mt-1 text-sm text-muted-foreground">The event id and finished tasks stay. Gemini rewrites notes. The app recomputes money and dates.</p>
+      <p id="revision-help" className="mt-1 text-sm text-muted-foreground">The event id and finished tasks stay. Gemini rewrites notes. The app recomputes money and dates.</p>
       <label className="mt-4 block text-sm font-semibold" htmlFor="revision-note">
         What changed?
       </label>
-      <TextArea id="revision-note" className="mt-2" value={instruction} onChange={(event) => setInstruction(event.target.value)} />
-      <Button className="mt-3" type="submit" disabled={busy || instruction.trim().length < 8}>
+      <TextArea id="revision-note" className="mt-2" aria-describedby="revision-help" value={instruction} onChange={(event) => setInstruction(event.target.value)} />
+      <Button className="mt-3" type="submit" aria-busy={busy} disabled={busy || instruction.trim().length < 8}>
         {busy ? "Checking the change…" : "Preview the change"}
       </Button>
       <div aria-live="polite" className="mt-3 text-sm">

@@ -28,21 +28,22 @@ export function breakCycles(tasks: TaskDraft[]): TaskDraft[] {
   const incoming = new Map(cleaned.map((task) => [task.id, [...task.dependencies]]));
 
   for (let guard = 0; guard < cleaned.length * cleaned.length + 1; guard += 1) {
-    const indegree = new Map<string, number>(cleaned.map((task) => [task.id, 0]));
+    const children = new Map<string, string[]>(cleaned.map((task) => [task.id, []]));
     for (const task of cleaned) {
-      indegree.set(task.id, (incoming.get(task.id) ?? []).length);
+      for (const dependency of incoming.get(task.id) ?? []) children.get(dependency)?.push(task.id);
     }
+    const indegree = new Map<string, number>(cleaned.map((task) => [task.id, (incoming.get(task.id) ?? []).length]));
     const queue = cleaned.filter((task) => (indegree.get(task.id) ?? 0) === 0).map((task) => task.id);
     const seen = new Set<string>();
-    while (queue.length) {
-      const id = queue.shift();
+    let head = 0;
+    while (head < queue.length) {
+      const id = queue[head];
+      head += 1;
       if (!id || seen.has(id)) continue;
       seen.add(id);
-      for (const task of cleaned) {
-        if ((incoming.get(task.id) ?? []).includes(id)) {
-          indegree.set(task.id, (indegree.get(task.id) ?? 1) - 1);
-          if ((indegree.get(task.id) ?? 0) === 0) queue.push(task.id);
-        }
+      for (const child of children.get(id) ?? []) {
+        indegree.set(child, (indegree.get(child) ?? 1) - 1);
+        if ((indegree.get(child) ?? 0) === 0) queue.push(child);
       }
     }
     if (seen.size === cleaned.length) break;
@@ -65,8 +66,10 @@ export function topologicalOrder(tasks: Pick<TimelineTask, "id" | "dependencies"
   }
   const queue = tasks.filter((task) => (indegree.get(task.id) ?? 0) === 0).map((task) => task.id);
   const order: string[] = [];
-  while (queue.length) {
-    const id = queue.shift();
+  let head = 0;
+  while (head < queue.length) {
+    const id = queue[head];
+    head += 1;
     if (!id) continue;
     order.push(id);
     for (const child of children.get(id) ?? []) {
@@ -143,14 +146,13 @@ export function scheduleTasks(tasks: TaskDraft[], eventDate: string, today: stri
     const children = dependents.get(id) ?? [];
     let finish = eventDate;
     if (children.length > 0) {
-      const earliestChildStart = children
-        .map((childId) => {
-          const child = byId.get(childId);
-          const childFinish = finishOf(childId);
-          return addDays(childFinish, -(durationOf(child ?? task) - 1));
-        })
-        .sort()[0];
-      finish = addDays(earliestChildStart ?? eventDate, -1);
+      let earliestChildStart = "";
+      for (const childId of children) {
+        const child = byId.get(childId);
+        const start = addDays(finishOf(childId), -(durationOf(child ?? task) - 1));
+        if (!earliestChildStart || start < earliestChildStart) earliestChildStart = start;
+      }
+      finish = addDays(earliestChildStart || eventDate, -1);
     }
     if (compareIsoDates(finish, eventDate) > 0) finish = eventDate;
     due.set(id, finish);

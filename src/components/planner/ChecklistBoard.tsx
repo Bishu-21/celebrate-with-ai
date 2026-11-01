@@ -1,8 +1,9 @@
 "use client";
 
+import { memo } from "react";
 import type { ChecklistItem } from "@/domain/types";
 
-export function ChecklistBoard({
+export const ChecklistBoard = memo(function ChecklistBoard({
   items,
   onToggle,
 }: {
@@ -24,7 +25,6 @@ export function ChecklistBoard({
                 type="checkbox"
                 checked={item.done}
                 onChange={() => onToggle(item.id)}
-                aria-label={item.title}
               />
               <span className={item.done ? "text-muted-foreground line-through" : ""}>{item.title}</span>
             </label>
@@ -33,4 +33,4 @@ export function ChecklistBoard({
       </ul>
     </section>
   );
-}
+});

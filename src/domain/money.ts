@@ -1,11 +1,19 @@
 import type { BudgetLine } from "@/domain/types";
 
+const inrCurrency = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
+});
+
+const inrInteger = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+
 export function formatInr(amountInr: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(Math.round(amountInr));
+  return inrCurrency.format(Math.round(amountInr));
+}
+
+export function formatCount(amount: number): string {
+  return inrInteger.format(Math.round(amount));
 }
 
 export function sumAmounts(lines: Pick<BudgetLine, "amountInr">[]): number {

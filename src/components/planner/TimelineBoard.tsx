@@ -31,7 +31,7 @@ const TaskRow = memo(function TaskRow({
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {(["todo", "doing", "done"] as TaskStatus[]).map((status) => (
-          <Button key={status} variant={task.status === status ? "primary" : "secondary"} aria-pressed={task.status === status} onClick={() => onStatus(task.id, status)}>
+          <Button key={status} variant={task.status === status ? "primary" : "secondary"} aria-pressed={task.status === status} aria-label={`Set ${task.title} to ${status}`} onClick={() => onStatus(task.id, status)}>
             {status}
           </Button>
         ))}
@@ -40,7 +40,7 @@ const TaskRow = memo(function TaskRow({
   );
 });
 
-export function TimelineBoard({
+export const TimelineBoard = memo(function TimelineBoard({
   plan,
   busy,
   onStatus,
@@ -89,4 +89,4 @@ export function TimelineBoard({
       <p className="sr-only">Protected categories start with {CATEGORY_LABELS[plan.priorities[0] ?? "catering"]}.</p>
     </section>
   );
-}
+});

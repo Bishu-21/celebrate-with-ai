@@ -27,6 +27,19 @@ describe("plan storage", () => {
     expect(window.localStorage.getItem("marigold.plan.quarantine")).toBe("{not-json");
   });
 
+  it("rejects a save when the stored revision moved", () => {
+    const plan = buildLocalPlan(FIXTURE_BRIEF, { id: "plan-stored", today: "2026-11-01" });
+    const first = savePlan(plan, 0);
+    expect(first.ok).toBe(true);
+    const stale = savePlan({ ...plan, city: "Pune" }, 0);
+    expect(stale.ok).toBe(false);
+    if (stale.ok) return;
+    expect(stale.reason).toBe("conflict");
+    const next = savePlan({ ...plan, city: "Pune" }, getPlanRevision());
+    expect(next.ok).toBe(true);
+    expect(getPlanRevision()).toBe(2);
+  });
+
   it("reports a quota failure without claiming the plan was stored", () => {
     const plan = buildLocalPlan(FIXTURE_BRIEF, { id: "plan-stored", today: "2026-11-01" });
     const setItem = Storage.prototype.setItem;

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 export const SECTIONS = [
   { id: "overview", label: "Overview" },
@@ -31,20 +32,16 @@ export function PlannerShell({
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
+  const menuRef = useDialogFocus<HTMLDivElement>(open, close);
 
   useEffect(() => {
     if (!open) return;
     const previous = document.body.style.overflow;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
     document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKey);
     };
-  }, [close, open]);
+  }, [open]);
 
   const nav = (
     <nav aria-label="Plan sections" className="flex flex-1 flex-col gap-1 p-2">
@@ -75,7 +72,7 @@ export function PlannerShell({
 
   return (
     <div className="flex min-h-dvh">
-      <aside className="hidden w-72 shrink-0 p-4 md:block">
+      <aside className="hidden w-72 shrink-0 p-4 md:block" inert={open}>
         <div className="glass sticky top-4 flex h-[calc(100dvh-2rem)] flex-col rounded-[32px] p-3">
           <Link href="/" className="block px-3 py-4 font-serif text-3xl">
             Marigold
@@ -84,7 +81,14 @@ export function PlannerShell({
         </div>
       </aside>
       {open ? (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div
+          ref={menuRef}
+          id="plan-menu"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Plan sections"
+          className="fixed inset-0 z-50 md:hidden"
+        >
           <button type="button" className="absolute inset-0 bg-black/70" aria-label="Close menu" onClick={close} />
           <aside className="glass relative h-full w-72 rounded-r-[32px] p-3">
             <p className="px-3 py-4 font-serif text-3xl">Marigold</p>
@@ -92,11 +96,11 @@ export function PlannerShell({
           </aside>
         </div>
       ) : null}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col" inert={open}>
         <header className="px-4 pt-4">
           <div className="glass mx-auto flex max-w-5xl items-center justify-between gap-3 rounded-full px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
-              <Button className="md:hidden" variant="secondary" aria-label="Open plan menu" aria-expanded={open} onClick={() => setOpen(true)}>
+              <Button className="md:hidden" variant="secondary" aria-expanded={open} aria-controls="plan-menu" aria-haspopup="dialog" onClick={() => setOpen(true)}>
                 Menu
               </Button>
               <div className="min-w-0">

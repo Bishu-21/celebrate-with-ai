@@ -29,6 +29,22 @@ describe("budget", () => {
     expect(scaled.find((line) => line.category === "venue")?.amountInr).toBe(lines.find((line) => line.category === "venue")?.amountInr);
   });
 
+  it("protects food when the plan is about 20 percent over budget", () => {
+    const budgetInr = 500_000;
+    const lines = allocateBudget(budgetInr, "intimate", priorities).map((line) => ({
+      ...line,
+      amountInr: Math.round(line.amountInr * 1.2),
+    }));
+    const scenarios = proposeTradeoffs(lines, budgetInr, priorities);
+    expect(sumAmounts(lines)).toBeGreaterThan(budgetInr);
+    expect(scenarios.length).toBeGreaterThan(0);
+    for (const scenario of scenarios) {
+      expect(sumAmounts(scenario.lines)).toBe(budgetInr);
+      expect(protectsTopPriority(lines, scenario.lines, "catering")).toBe(true);
+      expect(scenario.lines.every((line) => line.isEstimated)).toBe(true);
+    }
+  });
+
   it("protects the top priority when closing an overage", () => {
     const lines: BudgetLine[] = [
       { category: "venue", amountInr: 30_000, assumption: "Estimate.", isEstimated: true },

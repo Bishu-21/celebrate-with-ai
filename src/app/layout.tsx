@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import { Instrument_Serif, Inter } from "next/font/google";
 import "./globals.css";
 
-const sans = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const sans = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const serif = Instrument_Serif({
   subsets: ["latin"],
   weight: "400",
   style: ["normal", "italic"],
   variable: "--font-instrument",
+  display: "swap",
 });
 
 export const metadata: Metadata = {

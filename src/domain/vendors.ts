@@ -1,6 +1,22 @@
-import type { Category, VendorComparisonRow, VendorQuote } from "@/domain/types";
+import { CATEGORY_LABELS, type Category, type VendorComparisonRow, type VendorQuote } from "@/domain/types";
 
 const HIDDEN_CHARGE_PATTERN = /\b(gst|tax|taxes|extra|overtime|hidden|additional|service charge|transport)\b/i;
+
+export function localVendorQuestions(input: {
+  category: Category;
+  mustHaves: string;
+  guestCoverage: number;
+  city: string;
+  occasion: string;
+}): string[] {
+  const focus = input.mustHaves.trim() || `${input.occasion} in ${input.city}`;
+  return [
+    `What is included for ${CATEGORY_LABELS[input.category].toLowerCase()}, and what is billed extra?`,
+    `How many guests does this quote cover out of ${input.guestCoverage}, and what happens if the count changes?`,
+    "Which taxes, GST, overtime, or transport fees are outside the headline price?",
+    `Can you meet this constraint: ${focus.slice(0, 160)}? Say what is excluded. Do not treat this as a booking.`,
+  ];
+}
 
 export function hiddenChargeNotes(notes: string): string[] {
   return notes

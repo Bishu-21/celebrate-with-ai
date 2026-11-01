@@ -1,11 +1,10 @@
-import { headcount } from "@/domain/guests";
+import { guestSummary } from "@/domain/guests";
 import type { EventPlan } from "@/domain/types";
 
 const MAX_CONTEXT_CHARS = 24_000;
 
 export function buildAiContext(plan: EventPlan): Record<string, unknown> {
-  const counts = { invited: 0, yes: 0, no: 0, maybe: 0 };
-  for (const guest of plan.guests) counts[guest.status] += 1;
+  const rsvp = guestSummary(plan.guests);
   const context = {
     planId: plan.id,
     occasion: plan.occasion,
@@ -38,7 +37,7 @@ export function buildAiContext(plan: EventPlan): Record<string, unknown> {
       guestCoverage: brief.guestCoverage,
       budgetCapInr: brief.budgetCapInr,
     })),
-    rsvp: { ...counts, headcount: headcount(plan.guests) },
+    rsvp,
   };
   const serialized = JSON.stringify(context);
   if (serialized.length <= MAX_CONTEXT_CHARS) return context;

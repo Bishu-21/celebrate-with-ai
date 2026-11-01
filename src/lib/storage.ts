@@ -1,5 +1,6 @@
 import type { EventPlan } from "@/domain/types";
 import { eventPlanSchema } from "@/lib/schemas";
+import { sanitizeUnknown } from "@/lib/sanitize";
 
 const STORAGE_KEY = "marigold.plan.v2";
 const LEGACY_KEY = "marigold.plan.v1";
@@ -147,13 +148,22 @@ export function emptyPlan(): null {
 
 export function savePlan(plan: EventPlan, expectedRevision = revisionCache): StorageResult {
   if (typeof window === "undefined") return { ok: false, reason: "quota", message: "Storage is only available in the browser." };
-  const current = readStored();
-  if (!current.ok && current.reason === "quota") return current;
-  const storedRevision = current.ok ? current.revision : 0;
-  if (current.ok && storedRevision !== expectedRevision) {
-    return { ok: false, reason: "conflict", message: "A newer copy of this plan is already saved in this browser." };
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  let storedRevision: number;
+  if (raw !== null && raw === snapshotRaw) {
+    storedRevision = revisionCache;
+    if (storedRevision !== expectedRevision) {
+      return { ok: false, reason: "conflict", message: "A newer copy of this plan is already saved in this browser." };
+    }
+  } else {
+    const current = readStored();
+    if (!current.ok && current.reason === "quota") return current;
+    storedRevision = current.ok ? current.revision : 0;
+    if (current.ok && storedRevision !== expectedRevision) {
+      return { ok: false, reason: "conflict", message: "A newer copy of this plan is already saved in this browser." };
+    }
   }
-  const result = writeEnvelope({ schemaVersion: 2, revision: storedRevision + 1, plan });
+  const result = writeEnvelope({ schemaVersion: 2, revision: storedRevision + 1, plan: sanitizeUnknown(plan) as EventPlan });
   if (result.ok) emit();
   return result;
 }

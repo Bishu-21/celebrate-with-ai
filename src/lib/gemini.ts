@@ -1,6 +1,14 @@
 import { GoogleGenAI, ThinkingLevel, Type, type Schema } from "@google/genai";
-import type { Category, ConstraintDelta, EventBrief, EventPlan } from "@/domain/types";
+import { CATEGORIES, type Category, type ConstraintDelta, type EventBrief, type EventPlan } from "@/domain/types";
 import { buildAiContext } from "@/lib/ai-context";
+import {
+  normalizeConstraintDelta,
+  normalizeIdeasDraft,
+  normalizePlanDraft,
+  normalizeTimelineDraft,
+  normalizeTradeoffDraft,
+  normalizeVendorDraft,
+} from "@/lib/normalize-draft";
 import {
   constraintDeltaSchema,
   geminiIdeasSchema,
@@ -15,26 +23,29 @@ import {
 } from "@/lib/schemas";
 
 const MODEL_DEFAULT = "gemini-3.5-flash-lite";
-const CATEGORY_LIST = "venue, catering, decor, photography, entertainment, miscellaneous";
+const CATEGORY_ENUM = [...CATEGORIES];
+const CATEGORY_LIST = CATEGORY_ENUM.join(", ");
+const PRIORITY_ENUM = ["high", "medium", "low"];
+
+function moneyLineSchema(): Schema {
+  return {
+    type: Type.OBJECT,
+    required: ["category", "amountInr", "assumption", "isEstimated"],
+    properties: {
+      category: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
+      amountInr: { type: Type.INTEGER },
+      assumption: { type: Type.STRING },
+      isEstimated: { type: Type.BOOLEAN },
+    },
+  };
+}
 
 export const INITIAL_PLAN_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   required: ["rationale", "budgetBreakdown", "timelineTasks", "tradeOffScenarios", "vendorBriefs", "checklist"],
   properties: {
     rationale: { type: Type.STRING },
-    budgetBreakdown: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["category", "amountInr", "assumption", "isEstimated"],
-        properties: {
-          category: { type: Type.STRING },
-          amountInr: { type: Type.INTEGER },
-          assumption: { type: Type.STRING },
-          isEstimated: { type: Type.BOOLEAN },
-        },
-      },
-    },
+    budgetBreakdown: { type: Type.ARRAY, items: moneyLineSchema() },
     timelineTasks: {
       type: Type.ARRAY,
       items: {
@@ -46,7 +57,7 @@ export const INITIAL_PLAN_RESPONSE_SCHEMA: Schema = {
           ownerHint: { type: Type.STRING },
           durationDays: { type: Type.INTEGER },
           dependencies: { type: Type.ARRAY, items: { type: Type.STRING } },
-          priority: { type: Type.STRING },
+          priority: { type: Type.STRING, enum: [...PRIORITY_ENUM] },
           note: { type: Type.STRING },
         },
       },
@@ -60,20 +71,8 @@ export const INITIAL_PLAN_RESPONSE_SCHEMA: Schema = {
           id: { type: Type.STRING },
           title: { type: Type.STRING },
           summary: { type: Type.STRING },
-          protectedPriority: { type: Type.STRING },
-          lines: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              required: ["category", "amountInr", "assumption", "isEstimated"],
-              properties: {
-                category: { type: Type.STRING },
-                amountInr: { type: Type.INTEGER },
-                assumption: { type: Type.STRING },
-                isEstimated: { type: Type.BOOLEAN },
-              },
-            },
-          },
+          protectedPriority: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
+          lines: { type: Type.ARRAY, items: moneyLineSchema() },
         },
       },
     },
@@ -83,7 +82,7 @@ export const INITIAL_PLAN_RESPONSE_SCHEMA: Schema = {
         type: Type.OBJECT,
         required: ["category", "mustHaves", "questions"],
         properties: {
-          category: { type: Type.STRING },
+          category: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
           mustHaves: { type: Type.STRING },
           questions: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
@@ -107,20 +106,8 @@ const TRADEOFF_RESPONSE_SCHEMA: Schema = {
           id: { type: Type.STRING },
           title: { type: Type.STRING },
           summary: { type: Type.STRING },
-          protectedPriority: { type: Type.STRING },
-          lines: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              required: ["category", "amountInr", "assumption", "isEstimated"],
-              properties: {
-                category: { type: Type.STRING },
-                amountInr: { type: Type.INTEGER },
-                assumption: { type: Type.STRING },
-                isEstimated: { type: Type.BOOLEAN },
-              },
-            },
-          },
+          protectedPriority: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
+          lines: { type: Type.ARRAY, items: moneyLineSchema() },
         },
       },
     },
@@ -162,7 +149,7 @@ const TIMELINE_RESPONSE_SCHEMA: Schema = {
           id: { type: Type.STRING },
           title: { type: Type.STRING },
           note: { type: Type.STRING },
-          priority: { type: Type.STRING },
+          priority: { type: Type.STRING, enum: [...PRIORITY_ENUM] },
           dependencies: { type: Type.ARRAY, items: { type: Type.STRING } },
           durationDays: { type: Type.INTEGER },
         },
@@ -174,10 +161,14 @@ const TIMELINE_RESPONSE_SCHEMA: Schema = {
 const ESTIMATE_RULE =
   "Every cost is an assumption. Set isEstimated to true. Never present a number as a confirmed vendor price or as live availability.";
 
+let cachedClient: { apiKey: string; client: GoogleGenAI } | null = null;
+
 function getClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return null;
-  return new GoogleGenAI({ apiKey });
+  if (cachedClient?.apiKey === apiKey) return cachedClient.client;
+  cachedClient = { apiKey, client: new GoogleGenAI({ apiKey }) };
+  return cachedClient.client;
 }
 
 function parseModelJson(text: string): unknown {
@@ -254,51 +245,8 @@ async function generateJson(systemInstruction: string, prompt: string, responseS
   }
 }
 
-function normalizePriority(value: unknown): "high" | "medium" | "low" {
-  const text = String(value ?? "").trim().toLowerCase();
-  if (text.startsWith("h") || text === "1" || text.includes("urgent") || text.includes("critical")) return "high";
-  if (text.startsWith("l") || text === "3") return "low";
-  return "medium";
-}
-
-function normalizeLine(value: unknown): Record<string, unknown> {
-  const line = value && typeof value === "object" ? { ...(value as Record<string, unknown>) } : {};
-  return {
-    ...line,
-    category: String(line.category ?? "").trim().toLowerCase(),
-    amountInr: Math.max(0, Math.round(Number(line.amountInr) || 0)),
-    assumption: String(line.assumption ?? "Gemini estimate. Not a confirmed vendor price.").trim() || "Gemini estimate. Not a confirmed vendor price.",
-    isEstimated: line.isEstimated !== false && line.isEstimated !== "false",
-  };
-}
-
-function normalizePlanDraft(raw: unknown): unknown {
-  if (!raw || typeof raw !== "object") return raw;
-  const draft = { ...(raw as Record<string, unknown>) };
-  if (Array.isArray(draft.budgetBreakdown)) draft.budgetBreakdown = draft.budgetBreakdown.map(normalizeLine);
-  if (Array.isArray(draft.timelineTasks)) {
-    draft.timelineTasks = draft.timelineTasks.map((task) => {
-      const item = task && typeof task === "object" ? { ...(task as Record<string, unknown>) } : {};
-      return { ...item, priority: normalizePriority(item.priority), durationDays: Math.max(1, Math.round(Number(item.durationDays) || 1)) };
-    });
-  }
-  if (Array.isArray(draft.tradeOffScenarios)) {
-    draft.tradeOffScenarios = draft.tradeOffScenarios.map((scenario) => {
-      const item = scenario && typeof scenario === "object" ? { ...(scenario as Record<string, unknown>) } : {};
-      return {
-        ...item,
-        protectedPriority: String(item.protectedPriority ?? "").trim().toLowerCase(),
-        lines: Array.isArray(item.lines) ? item.lines.map(normalizeLine) : item.lines,
-      };
-    });
-  }
-  if (Array.isArray(draft.vendorBriefs)) {
-    draft.vendorBriefs = draft.vendorBriefs.map((brief) => {
-      const item = brief && typeof brief === "object" ? { ...(brief as Record<string, unknown>) } : {};
-      return { ...item, category: String(item.category ?? "").trim().toLowerCase() };
-    });
-  }
-  return draft;
+function schemaDetail(issues: Array<{ path: PropertyKey[]; message: string }>): string {
+  return issues.slice(0, 4).map((issue) => `${issue.path.join(".") || "plan"}: ${issue.message}`).join("; ");
 }
 
 export async function generateInitialEventPlan(brief: EventBrief): Promise<GeminiPlanDraft> {
@@ -316,10 +264,7 @@ export async function generateInitialEventPlan(brief: EventBrief): Promise<Gemin
     INITIAL_PLAN_RESPONSE_SCHEMA,
   );
   const result = geminiPlanDraftSchema.safeParse(normalizePlanDraft(parsed));
-  if (!result.success) {
-    const detail = result.error.issues.slice(0, 4).map((issue) => `${issue.path.join(".") || "plan"}: ${issue.message}`).join("; ");
-    throw new Error(`Gemini returned a plan that did not match the schema. ${detail}`);
-  }
+  if (!result.success) throw new Error(`Gemini returned a plan that did not match the schema. ${schemaDetail(result.error.issues)}`);
   return result.data;
 }
 
@@ -334,8 +279,8 @@ export async function recalculateBudgetTradeoffs(plan: EventPlan, instruction = 
     JSON.stringify({ instruction, ...buildAiContext(plan) }),
     TRADEOFF_RESPONSE_SCHEMA,
   );
-  const result = geminiTradeoffDraftSchema.safeParse(parsed);
-  if (!result.success) throw new Error("Gemini returned trade-offs that did not match the schema.");
+  const result = geminiTradeoffDraftSchema.safeParse(normalizeTradeoffDraft(parsed));
+  if (!result.success) throw new Error(`Gemini returned trade-offs that did not match the schema. ${schemaDetail(result.error.issues)}`);
   return result.data;
 }
 
@@ -358,8 +303,8 @@ export async function compareVendorQuotes(input: {
     JSON.stringify(input),
     VENDOR_RESPONSE_SCHEMA,
   );
-  const result = geminiVendorDraftSchema.safeParse(parsed);
-  if (!result.success) throw new Error("Gemini returned a vendor comparison that did not match the schema.");
+  const result = geminiVendorDraftSchema.safeParse(normalizeVendorDraft(parsed));
+  if (!result.success) throw new Error(`Gemini returned a vendor comparison that did not match the schema. ${schemaDetail(result.error.issues)}`);
   return result.data;
 }
 
@@ -373,18 +318,22 @@ export async function rescheduleTimelineWithDependencies(plan: EventPlan, eventD
     JSON.stringify({ eventDate, ...buildAiContext(plan) }),
     TIMELINE_RESPONSE_SCHEMA,
   );
-  const result = geminiTimelineDraftSchema.safeParse(parsed);
-  if (!result.success) throw new Error("Gemini returned a timeline that did not match the schema.");
+  const result = geminiTimelineDraftSchema.safeParse(normalizeTimelineDraft(parsed));
+  if (!result.success) throw new Error(`Gemini returned a timeline that did not match the schema. ${schemaDetail(result.error.issues)}`);
   return result.data;
 }
 
-export async function reviseEventPlan(plan: EventPlan, instruction: string): Promise<{
+export async function reviseEventPlan(
+  plan: EventPlan,
+  instruction: string,
+  scope: { tradeoffs: boolean; timeline: boolean } = { tradeoffs: true, timeline: true },
+): Promise<{
   tradeoffs: GeminiTradeoffDraft | null;
   timeline: GeminiTimelineDraft | null;
 }> {
   const [tradeoffs, timeline] = await Promise.allSettled([
-    recalculateBudgetTradeoffs(plan, instruction),
-    rescheduleTimelineWithDependencies(plan, plan.eventDate),
+    scope.tradeoffs ? recalculateBudgetTradeoffs(plan, instruction) : Promise.resolve(null),
+    scope.timeline ? rescheduleTimelineWithDependencies(plan, plan.eventDate) : Promise.resolve(null),
   ]);
   return {
     tradeoffs: tradeoffs.status === "fulfilled" ? tradeoffs.value : null,
@@ -422,7 +371,7 @@ export async function extractConstraintDelta(plan: EventPlan, instruction: strin
       },
     },
   );
-  const result = constraintDeltaSchema.safeParse(parsed);
+  const result = constraintDeltaSchema.safeParse(normalizeConstraintDelta(parsed));
   if (!result.success) throw new Error("Gemini returned a revision that did not match the schema.");
   const delta: ConstraintDelta = {
     guestDelta: result.data.guestDelta,
@@ -466,7 +415,7 @@ export async function generateIdeas(plan: EventPlan): Promise<Array<{ id: string
       },
     },
   );
-  const result = geminiIdeasSchema.safeParse(parsed);
-  if (!result.success) throw new Error("Gemini returned ideas that did not match the schema.");
+  const result = geminiIdeasSchema.safeParse(normalizeIdeasDraft(parsed));
+  if (!result.success) throw new Error(`Gemini returned ideas that did not match the schema. ${schemaDetail(result.error.issues)}`);
   return result.data.ideas;
 }

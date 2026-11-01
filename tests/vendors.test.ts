@@ -34,5 +34,6 @@ describe("vendors", () => {
     expect(rows[1]?.coversHeadcount).toBe(true);
     expect(rows[1]?.withinCap).toBe(false);
     expect(rows[1]?.isEstimated).toBe(false);
+    expect(rows.every((row) => !("available" in row) && !("availability" in row))).toBe(true);
   });
 });

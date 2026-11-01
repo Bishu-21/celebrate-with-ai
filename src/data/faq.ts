@@ -13,6 +13,10 @@ export const FAQ_ITEMS = [
   },
   {
     question: "Does Marigold book vendors?",
-    answer: "No. It helps you write questions, then compare quotations you paste in. It does not claim live availability.",
+    answer: "No. It writes questions a host can ask, then compares quotations you paste in. It does not claim live availability or a confirmed price.",
+  },
+  {
+    question: "What if a task slips?",
+    answer: "The venue and date lock comes before catering, decor, photos, and entertainment. If that lock is still open after its due date, the tasks that depend on it are marked blocked. Marking the lock done releases them.",
   },
 ] as const;

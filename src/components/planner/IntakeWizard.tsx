@@ -104,17 +104,23 @@ export function IntakeWizard({
                 <option value="community">Community event</option>
               </select>
             </Field>
-            <Field label="Event name" error={fieldError && brief.title.trim().length < 2 ? fieldError : undefined}>
+            <Field label="Event name">
               <TextInput
                 value={brief.title}
                 onChange={(event) => update({ title: event.target.value })}
                 invalid={Boolean(fieldError) && brief.title.trim().length < 2}
-                aria-describedby={fieldError ? "intake-error" : undefined}
+                aria-describedby={fieldError && brief.title.trim().length < 2 ? "intake-error" : undefined}
                 required
               />
             </Field>
             <Field label="City">
-              <TextInput value={brief.city} onChange={(event) => update({ city: event.target.value })} required />
+              <TextInput
+                value={brief.city}
+                onChange={(event) => update({ city: event.target.value })}
+                invalid={Boolean(fieldError) && brief.city.trim().length < 2}
+                aria-describedby={fieldError && brief.city.trim().length < 2 ? "intake-error" : undefined}
+                required
+              />
             </Field>
           </>
         ) : null}
@@ -122,7 +128,14 @@ export function IntakeWizard({
         {step === 1 ? (
           <>
             <Field label="Event date">
-              <TextInput type="date" value={brief.eventDate} onChange={(event) => update({ eventDate: event.target.value })} required />
+              <TextInput
+                type="date"
+                value={brief.eventDate}
+                onChange={(event) => update({ eventDate: event.target.value })}
+                invalid={Boolean(fieldError) && !isRealIsoDate(brief.eventDate)}
+                aria-describedby={fieldError && !isRealIsoDate(brief.eventDate) ? "intake-error" : undefined}
+                required
+              />
             </Field>
             <Field label="Planning guest count">
               <TextInput
@@ -130,6 +143,8 @@ export function IntakeWizard({
                 min={1}
                 value={brief.guestCount}
                 onChange={(event) => update({ guestCount: Number(event.target.value) })}
+                invalid={Boolean(fieldError) && brief.guestCount < 1}
+                aria-describedby={fieldError && brief.guestCount < 1 ? "intake-error" : undefined}
                 required
               />
             </Field>
@@ -140,6 +155,8 @@ export function IntakeWizard({
                 step={1000}
                 value={brief.budgetInr}
                 onChange={(event) => update({ budgetInr: Number(event.target.value) })}
+                invalid={Boolean(fieldError) && brief.budgetInr < 10000}
+                aria-describedby={fieldError && brief.budgetInr < 10000 ? "intake-error" : undefined}
                 required
               />
             </Field>
@@ -206,7 +223,7 @@ export function IntakeWizard({
             Back
           </Button>
         ) : null}
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" aria-busy={busy} disabled={busy}>
           {busy ? "Asking Gemini…" : step < 3 ? "Continue" : "Generate plan"}
         </Button>
       </div>

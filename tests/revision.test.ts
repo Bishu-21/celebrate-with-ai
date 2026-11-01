@@ -2,10 +2,25 @@ import { describe, expect, it } from "vitest";
 import { sumAmounts } from "@/domain/money";
 import { buildLocalPlan } from "@/domain/local-plan";
 import { FIXTURE_BRIEF } from "./brief";
-import { parseConstraintChange, revisePlan } from "@/domain/revision";
+import { advisoryScope, constraintDeltaIsSettled, parseConstraintChange, revisePlan } from "@/domain/revision";
 import { protectsTopPriority } from "@/domain/budget";
 
 describe("revision", () => {
+  it("skips a second model read when the parser already settled the sentence", () => {
+    const text = "We're inviting 10 more people.";
+    const delta = parseConstraintChange(text, 150_000, "2026-12-20");
+    expect(constraintDeltaIsSettled(delta)).toBe(true);
+    expect(delta.guestDelta).toBe(10);
+  });
+
+  it("asks for trade-off notes only when money or guests change, and timeline notes only when the date moves", () => {
+    const before = { budgetInr: 150_000, guestCount: 40, eventDate: "2026-12-20" };
+    expect(advisoryScope(before, { ...before, guestCount: 50 })).toEqual({ tradeoffs: true, timeline: false });
+    expect(advisoryScope(before, { ...before, budgetInr: 100_000 })).toEqual({ tradeoffs: true, timeline: false });
+    expect(advisoryScope(before, { ...before, eventDate: "2026-12-06" })).toEqual({ tradeoffs: false, timeline: true });
+    expect(advisoryScope(before, before)).toEqual({ tradeoffs: false, timeline: false });
+  });
+
   it("parses the fifty-guest constraint change", () => {
     const delta = parseConstraintChange(
       "We have 50 more guests, the budget dropped by ₹2,00,000, and the event is 2 weeks earlier.",

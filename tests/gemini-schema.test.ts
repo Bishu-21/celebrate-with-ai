@@ -12,6 +12,10 @@ describe("gemini response schema", () => {
       "vendorBriefs",
       "checklist",
     ]);
+    const timeline = INITIAL_PLAN_RESPONSE_SCHEMA.properties?.timelineTasks as {
+      items?: { properties?: { priority?: { enum?: string[] } } };
+    };
+    expect(timeline.items?.properties?.priority?.enum).toEqual(["high", "medium", "low"]);
   });
 
   it("rejects a draft that omits the estimate flag", () => {

@@ -45,13 +45,13 @@ export function IdeasBoard({
             <p className="mt-2 text-sm">Estimated add {formatInr(idea.estimatedCostInr)}. {idea.taskTitle ? `Task: ${idea.taskTitle}.` : "No new task."}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {idea.status !== "saved" && idea.status !== "added" ? (
-                <Button variant="secondary" onClick={() => onStatus(idea.id, "saved")}>Save</Button>
+                <Button variant="secondary" aria-label={`Save ${idea.title}`} onClick={() => onStatus(idea.id, "saved")}>Save</Button>
               ) : null}
               {idea.status !== "added" ? (
-                <Button variant="secondary" onClick={() => onStatus(idea.id, "dismissed")}>Dismiss</Button>
+                <Button variant="secondary" aria-label={`Dismiss ${idea.title}`} onClick={() => onStatus(idea.id, "dismissed")}>Dismiss</Button>
               ) : null}
               {idea.status !== "added" ? (
-                <Button onClick={() => onAdd(idea.id)}>Add to plan</Button>
+                <Button aria-label={`Add ${idea.title} to plan`} onClick={() => onAdd(idea.id)}>Add to plan</Button>
               ) : (
                 <Badge tone="ok">Added</Badge>
               )}

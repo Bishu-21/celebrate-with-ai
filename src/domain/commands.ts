@@ -40,12 +40,14 @@ export function applyPlanCommand(plan: EventPlan, command: PlanCommand): Command
     const target = plan.checklist.find((item) => item.id === command.itemId);
     if (!target) return reject(plan, "That checklist item is not in this plan.");
     const checklist = plan.checklist.map((item) => (item.id === command.itemId ? { ...item, done: command.done } : item));
-    const timelineTasks = plan.timelineTasks.map((task) => {
-      const linked = checklist.filter((item) => item.taskId === task.id);
-      if (!linked.length || !linked.some((item) => item.id === command.itemId)) return task;
-      const done = linked.every((item) => item.done);
-      return { ...task, status: done ? "done" as const : task.status === "done" ? "todo" as const : task.status, overdue: done ? false : task.overdue };
-    });
+    if (!target.taskId) return { ok: true, warning: null, plan: { ...plan, checklist } };
+    const linked = checklist.filter((item) => item.taskId === target.taskId);
+    const done = linked.every((item) => item.done);
+    const timelineTasks = plan.timelineTasks.map((task) =>
+      task.id === target.taskId
+        ? { ...task, status: done ? "done" as const : task.status === "done" ? "todo" as const : task.status, overdue: done ? false : task.overdue }
+        : task,
+    );
     return { ok: true, warning: null, plan: { ...plan, checklist, timelineTasks } };
   }
 

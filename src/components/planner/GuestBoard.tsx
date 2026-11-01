@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { guestSummary, isValidGuestEmail, isValidGuestName } from "@/domain/guests";
 import type { Guest, GuestStatus } from "@/domain/types";
 import { Button } from "@/components/ui/Button";
 import { Field, selectFieldClass, TextInput } from "@/components/ui/Field";
 
-export function GuestBoard({
+export const GuestBoard = memo(function GuestBoard({
   guests,
   onAdd,
   onStatus,
@@ -77,7 +77,6 @@ export function GuestBoard({
               <select
                 className={selectFieldClass("w-auto")}
                 value={guest.status}
-                aria-label={`RSVP for ${guest.name}`}
                 onChange={(event) => onStatus(guest.id, event.target.value as GuestStatus)}
               >
                 <option value="invited">Invited</option>
@@ -91,4 +90,4 @@ export function GuestBoard({
       </ul>
     </section>
   );
-}
+});

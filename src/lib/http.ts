@@ -1,5 +1,16 @@
 import { NextResponse } from "next/server";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
+import { sanitizeUnknown } from "@/lib/sanitize";
+
+function sameOrigin(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === new URL(request.url).host;
+  } catch {
+    return false;
+  }
+}
 
 export async function readBody(request: Request): Promise<{ ok: true; data: unknown } | { ok: false; response: NextResponse }> {
   const declared = Number(request.headers.get("content-length") ?? "0");
@@ -17,13 +28,19 @@ export async function readBody(request: Request): Promise<{ ok: true; data: unkn
     };
   }
 
+  if (!sameOrigin(request)) return { ok: false, response: apiError(403, "cross_origin", "This planner only accepts requests from its own site.", false) };
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return { ok: false, response: apiError(415, "unsupported_type", "Request body must be JSON.", false) };
+  }
+
   const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > 120_000) {
+  if (Buffer.byteLength(text) > 120_000) {
     return { ok: false, response: apiError(413, "payload_too_large", "Request is too large.", false) };
   }
 
   try {
-    return { ok: true, data: JSON.parse(text) as unknown };
+    return { ok: true, data: sanitizeUnknown(JSON.parse(text) as unknown) };
   } catch {
     return { ok: false, response: apiError(400, "invalid_json", "Request body must be JSON.", false) };
   }

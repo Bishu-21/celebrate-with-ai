@@ -1,7 +1,7 @@
 const STEPS = [
-  { title: "Answer the practical questions", body: "Say what the event is, what it can cost, and what matters most. Wedding, birthday, and community plans do not share one task list." },
-  { title: "Gemini drafts structured JSON", body: "The model returns budget lines, tasks with dependencies, trade-offs, vendor notes, and occasion ideas. The app recomputes totals and dates." },
-  { title: "Revise the same plan", body: "Say the guest list grew, the budget changed, or the date moved. Gemini reads the sentence. Completed work stays put." },
+  { title: "Answer the practical questions", body: "Occasion, budget, guest count, date, intimate or grand, and which category you refuse to cut first. Wedding, birthday, and community plans do not share one task list." },
+  { title: "Gemini drafts structured JSON", body: "The model returns budget lines, tasks that wait on the venue lock, trade-offs, vendor questions, and occasion ideas. The app recomputes totals, due dates, and headcount. Costs stay assumptions until you enter a quote." },
+  { title: "Revise the same plan", body: "Fifty more guests, a budget drop of ₹2,00,000, and a date two weeks earlier update this plan. Finished tasks stay finished. A slipped venue lock blocks the tasks that depend on it. Cuts stay suggestions until you apply one." },
 ];
 
 export function HowItWorks() {

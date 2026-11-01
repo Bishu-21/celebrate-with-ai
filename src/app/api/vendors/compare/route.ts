@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { compareVendorQuotes as scoreQuotes } from "@/domain/vendors";
+import { compareVendorQuotes as scoreQuotes, localVendorQuestions } from "@/domain/vendors";
 import { compareVendorQuotes } from "@/lib/gemini";
 import { invalid, readBody } from "@/lib/http";
 import { vendorCompareRequestSchema } from "@/lib/schemas";
@@ -54,8 +54,14 @@ export async function POST(request: Request) {
       source: "local" as const,
       vendorComparisonMatrix: matrix,
       commentary: [],
-      questions: [],
-      warning: "Quote scores were calculated in the app. Gemini did not write the commentary.",
+      questions: localVendorQuestions({
+        category: parsed.data.category,
+        mustHaves: parsed.data.mustHaves,
+        guestCoverage: parsed.data.headcount,
+        city: parsed.data.city,
+        occasion: parsed.data.occasion,
+      }),
+      warning: "Quote scores and questions were calculated in the app. Gemini did not write the commentary.",
     });
   }
 }

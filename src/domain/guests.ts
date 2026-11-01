@@ -13,18 +13,15 @@ export function isValidGuestName(name: string): boolean {
   return value.length >= 2 && value.length <= 80;
 }
 
-export function headcount(guests: Guest[]): number {
-  return guests
-    .filter((guest) => guest.status === "yes" || guest.status === "maybe")
-    .reduce((total, guest) => total + Math.max(0, guest.partySize), 0);
+export function guestSummary(guests: Guest[]): { invited: number; yes: number; no: number; maybe: number; headcount: number } {
+  const summary = { invited: 0, yes: 0, no: 0, maybe: 0, headcount: 0 };
+  for (const guest of guests) {
+    summary[guest.status] += 1;
+    if (guest.status === "yes" || guest.status === "maybe") summary.headcount += Math.max(0, guest.partySize);
+  }
+  return summary;
 }
 
-export function guestSummary(guests: Guest[]): { invited: number; yes: number; no: number; maybe: number; headcount: number } {
-  return {
-    invited: guests.filter((guest) => guest.status === "invited").length,
-    yes: guests.filter((guest) => guest.status === "yes").length,
-    no: guests.filter((guest) => guest.status === "no").length,
-    maybe: guests.filter((guest) => guest.status === "maybe").length,
-    headcount: headcount(guests),
-  };
+export function headcount(guests: Guest[]): number {
+  return guestSummary(guests).headcount;
 }

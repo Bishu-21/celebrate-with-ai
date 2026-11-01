@@ -1,4 +1,4 @@
-import { sumAmounts } from "@/domain/money";
+import { formatCount, sumAmounts } from "@/domain/money";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -87,7 +87,7 @@ export function scaleCateringForGuests(
     return {
       ...line,
       amountInr: Math.max(0, Math.round(perGuest * safeNext)),
-      assumption: `Scaled from about ${Math.round(perGuest).toLocaleString("en-IN")} per guest. This is an assumption, not a caterer's quote.`,
+      assumption: `Scaled from about ${formatCount(perGuest)} per guest. This is an assumption, not a caterer's quote.`,
       isEstimated: true,
       origin: line.origin ?? "local",
     };
@@ -107,11 +107,11 @@ function floorFor(category: Category, budgetInr: number): number {
 }
 
 export function cutByCategory(before: BudgetLine[], after: BudgetLine[]): Record<Category, number> {
-  const afterByCategory = new Map(after.map((line) => [line.category, line.amountInr]));
+  const beforeAmount = new Map(before.map((line) => [line.category, line.amountInr]));
+  const afterAmount = new Map(after.map((line) => [line.category, line.amountInr]));
   return CATEGORIES.reduce(
     (cuts, category) => {
-      const previous = before.find((line) => line.category === category)?.amountInr ?? 0;
-      cuts[category] = previous - (afterByCategory.get(category) ?? 0);
+      cuts[category] = (beforeAmount.get(category) ?? 0) - (afterAmount.get(category) ?? 0);
       return cuts;
     },
     {} as Record<Category, number>,
@@ -180,7 +180,7 @@ export function proposeTradeoffs(
     {
       id: "protect-top-priority",
       title: `Protect ${CATEGORY_LABELS[top].toLowerCase()}`,
-      summary: `Closes ${excess.toLocaleString("en-IN")} rupees of overage by cutting lower priorities first.`,
+      summary: `Closes ${formatCount(excess)} rupees of overage by cutting lower priorities first.`,
       lines: balanced,
       protectedPriority: top,
     },

@@ -15,7 +15,12 @@ Gemini drafts and rewrites the words. TypeScript recomputes the money, the dates
 | Vendor checklist, questions, and quote comparison | `compareVendorQuotes`, `POST /api/vendors/questions`, `POST /api/vendors/compare` |
 | Guest RSVP management | `src/domain/guests.ts`, Guests board |
 | Interactive checklist | `src/components/planner/ChecklistBoard.tsx` |
+| Occasion-specific ideas | `generateIdeas`, `POST /api/plan/ideas`, `src/domain/occasion-templates.ts` |
 | Stateful revision when guests, budget, or date change | `reviseEventPlan`, `src/domain/revision.ts`, `POST /api/plan/revise` |
+| Trade-offs when spend is about 20% over, without a blind cut | `proposeTradeoffs` in `src/domain/budget.ts` |
+| A delayed dependency blocks the next task | `scheduleTasks` in `src/domain/timeline.ts` |
+| Vendor questions even when Gemini does not answer | `localVendorQuestions` in `src/domain/vendors.ts`, `POST /api/vendors/questions` |
+| No invented vendor availability or confirmed price | Quote scores in `src/domain/vendors.ts`. `isEstimated` stays true until the host enters a quote. |
 
 The revision the planner is built around: “We have 50 more guests, the budget dropped by ₹2,00,000, and the event is 2 weeks earlier.” That sentence updates the open plan. It does not start a new event. Completed tasks stay completed.
 
@@ -41,14 +46,24 @@ The first plan still requires Gemini. A missing key returns an error and does no
 
 ## Prompt Evolution Across Attempts
 
-Attempt 0, this repository:
+Attempt 1:
 
-- System instructions require JSON that matches `responseSchema` for the plan, trade-offs, vendor matrix, and timeline.
-- Invalid model JSON is discarded. The UI does not render a raw chat transcript.
+- System instructions require JSON that matches `responseSchema`. Category and priority fields are enums, so the model is asked for `high`, `medium`, or `low` and the six budget categories.
+- Model JSON is normalized before Zod validation. A priority such as "Urgent", a category such as "Food", or a numeric string still becomes a valid draft. Invalid JSON is discarded. The UI does not render a raw chat transcript.
 - Cost language in every system instruction says the number is an assumption.
-- Revision sends the current plan and keeps its id. Gemini may rewrite notes. It does not replace the calculated totals.
+- Revision keeps the plan id. When the local parser already read the guest, budget, or date change, Gemini is not asked to read that sentence again. Trade-off notes are requested only when the guest count or budget changed. Timeline notes are requested only when the date changed. Gemini does not replace the calculated totals.
 
-Update this section after a Hack2skill attempt. Only the last submission counts.
+## Efficiency
+
+- Budget, timeline, vendor, guest, checklist, and idea boards load with `next/dynamic`. The intake and overview stay in the first planner chunk.
+- One Gemini client is reused for the server process. Response schemas share one budget-line shape.
+- A settled revision skips `extractConstraintDelta`. The two advisory calls run only for fields that changed, and they run together when both are needed.
+- Timeline ordering walks each task and edge once per pass. Due dates take the earliest child start in one pass.
+- Saving a plan reuses the parsed copy already in memory when the browser text has not changed.
+- The rate limiter keeps a sliding window per caller and prunes the key map in batches.
+- Currency and guest totals reuse one formatter and one pass over the guest list.
+- Budget rows, timeline tasks, and the checklist skip re-rendering when their data and callbacks have not changed.
+- Fonts use `display: "swap"` so text stays readable while Instrument Serif and Inter load.
 
 ## Security & Accessibility
 
@@ -56,21 +71,23 @@ Security:
 
 - No API key in source. Copy `.env.example` to `.env.local`.
 - Zod validates every API body in `src/lib/schemas.ts`.
-- Text is trimmed, control characters are stripped, and payloads over 120 KB are rejected.
-- Routes are rate-limited.
+- Text is trimmed. Control characters and bidi overrides are stripped from API JSON and from the plan saved in the browser. Keys named `__proto__`, `constructor`, and `prototype` are dropped.
+- A request with an `Origin` from another site is rejected. A body that is not `application/json`, or is over 120 KB, is rejected. A missing `Origin` is still accepted so same-machine checks keep working.
+- Routes are rate-limited. On Vercel, or when `TRUST_FORWARDED_FOR=1`, the key is `x-real-ip`, then the first `x-forwarded-for` hop. Elsewhere every caller shares the local bucket so a spoofed forwarding header cannot dodge the limit.
 - AI text is rendered as text, not HTML.
-- `next.config.ts` sends `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, and a Content-Security-Policy.
+- `next.config.ts` sends `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `X-DNS-Prefetch-Control`, `X-Permitted-Cross-Domain-Policies`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, `Permissions-Policy`, and a Content-Security-Policy with `object-src 'none'`. Production also sends HSTS and `upgrade-insecure-requests`. `script-src` still allows inline scripts because Next requires that.
 - `.gitignore` excludes `.env`, `.next`, and `node_modules`.
 
 Accessibility:
 
 - `header`, `nav`, `main`, `section`, and `footer` landmark the pages.
-- Inputs have visible labels. Icon-only and reorder buttons have `aria-label`.
-- Intake errors use `role="alert"`. Revisions and checklist progress use `aria-live`.
+- A field's accessible name is its label. Hints and errors are descriptions (`aria-describedby`), and an invalid control sets `aria-invalid`.
+- Intake errors use one `role="alert"`. The invalid name, city, date, guest count, or budget field points at that alert. Revisions and checklist progress use `aria-live`.
 - Dialogs use `role="dialog"`, `aria-modal`, `aria-labelledby`, focus on open, Tab wrap, and Escape.
-- The mobile plan menu closes on Escape.
+- The mobile plan menu is a modal dialog. Focus moves inside it, Tab stays inside it, and Escape closes it. The rest of the planner is `inert` while it is open.
+- Timeline status buttons and idea actions include the item name. Budget and vendor tables have captions. Checklist boxes are named by their labels.
 - A skip link points at `#planner-main`.
-- `tests/contrast.test.ts` checks the palette against WCAG AA.
+- `tests/contrast.test.ts` checks the palette against WCAG AA. `tests/a11y.test.tsx` checks labels, the plan menu, and named timeline actions.
 
 ## Testing
 
@@ -81,7 +98,20 @@ npm run typecheck
 npm run build
 ```
 
-Vitest covers budget trade-offs, dependency ordering and date shifts, RSVP headcount, vendor quote gaps, the 50-guest revision, Zod rejection, the Gemini response schema, color contrast, the intake error, checklist keyboard toggle, and dialog Escape. Gemini is not called from the test suite.
+Vitest does not call Gemini. These tests map to the challenge:
+
+| Requirement | Test |
+| --- | --- |
+| Clarifying intake: occasion, budget, guests, date, vibe, priority | `tests/intake-form.test.tsx` |
+| The 50-guest, ₹2,00,000, two-week revision keeps the plan id and finished tasks | `tests/problem-statement.test.ts`, `tests/revision.test.ts` |
+| A 20% overage proposes cuts that protect the top priority | `tests/budget.test.ts` |
+| Venue lock precedes secondary vendors, and a slip blocks them | `tests/timeline.test.ts` |
+| Quote comparison: coverage, cap, hidden charges, no availability flag | `tests/vendors.test.ts` |
+| Local vendor questions when the model is down | `tests/vendor-questions.test.ts` |
+| RSVP headcount and occasion-specific ideas | `tests/guests.test.ts`, `tests/ideas.test.ts` |
+| Same-origin JSON, control-character stripping, and platform IP keying | `tests/http-security.test.ts` |
+| Labels, modal plan menu, and named timeline actions | `tests/a11y.test.tsx` |
+| Checklist keyboard toggle linked to a task | `tests/checklist.test.tsx`, `tests/commands.test.ts` |
 
 ## Run locally
 
@@ -96,6 +126,6 @@ Put a Google AI Studio key in `GEMINI_API_KEY`, then:
 npm run dev
 ```
 
-Open `http://localhost:3000` and start a plan. Generating the first plan calls Gemini. There is no sample plan. Revision, trade-offs, timeline notes, quote scores, and ideas still calculate in the app when Gemini does not answer, and the screen says so.
+Open `http://localhost:3000` and start a plan. Generating the first plan calls Gemini. There is no sample plan. Revision, trade-offs, timeline notes, quote scores, vendor questions, and ideas still calculate in the app when Gemini does not answer, and the screen says so.
 
 Deploy the Next.js app on any Node host. Set `GEMINI_API_KEY` in the host’s environment, not in the repository.

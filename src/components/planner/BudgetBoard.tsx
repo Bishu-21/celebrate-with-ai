@@ -57,7 +57,7 @@ const BudgetRow = memo(function BudgetRow({
   );
 });
 
-export function BudgetBoard({
+export const BudgetBoard = memo(function BudgetBoard({
   plan,
   onConfirm,
   onApplyScenario,
@@ -96,6 +96,7 @@ export function BudgetBoard({
       )}
       <div className="glass mt-4 overflow-x-auto rounded-[28px] p-4">
         <table className="w-full min-w-[44rem] text-sm">
+          <caption className="sr-only">Budget categories, amounts, share of the total, and whether each figure is still an estimate.</caption>
           <thead>
             <tr className="text-left text-xs uppercase tracking-widest text-muted-foreground">
               <th scope="col" className="pb-2 pr-4">Category</th>
@@ -137,4 +138,4 @@ export function BudgetBoard({
       ) : null}
     </section>
   );
-}
+});

@@ -24,7 +24,9 @@ describe("landing markup", () => {
     expect(screen.getByRole("heading", { level: 2, name: "How a plan stays intact" })).toBeTruthy();
     expect(screen.getByRole("heading", { level: 2, name: "Questions hosts ask first" })).toBeTruthy();
     expect(screen.getByRole("heading", { level: 3, name: "Clarifying intake" })).toBeTruthy();
-    expect(container.querySelectorAll("details")).toHaveLength(4);
+    expect(container.querySelectorAll("details")).toHaveLength(5);
+    expect(screen.getByRole("heading", { level: 3, name: "In-place revision" })).toBeTruthy();
+    expect(screen.getByText(/50 more guests, the budget dropped by ₹2,00,000/i)).toBeTruthy();
     expect(container.querySelector("summary")?.textContent).toContain("Which celebrations can Marigold plan?");
     expect(container.querySelectorAll("ol span")[0]?.textContent).toBe("01");
     expect(screen.getByRole("link", { name: "Start a plan" }).getAttribute("href")).toBe("/planner");

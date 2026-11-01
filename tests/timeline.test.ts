@@ -40,6 +40,18 @@ describe("timeline", () => {
     expect(topologicalOrder(cyclic)).toHaveLength(2);
   });
 
+  it("blocks secondary vendors when the venue lock is overdue and releases them when it is done", () => {
+    const open = scheduleTasks(drafts, "2026-12-20", "2026-12-19");
+    expect(open.find((task) => task.id === "lock-date-venue")?.overdue).toBe(true);
+    expect(open.find((task) => task.id === "book-catering")?.status).toBe("blocked");
+    const released = scheduleTasks(
+      open.map((task) => (task.id === "lock-date-venue" ? { ...task, status: "done" as const } : task)),
+      "2026-12-20",
+      "2026-12-19",
+    );
+    expect(released.find((task) => task.id === "book-catering")?.status).not.toBe("blocked");
+  });
+
   it("reports a cycle instead of deleting the dependency", () => {
     const cyclic = [
       { id: "a", title: "A", ownerHint: "Hosts", durationDays: 2, dependencies: ["b"], priority: "high" as const },
