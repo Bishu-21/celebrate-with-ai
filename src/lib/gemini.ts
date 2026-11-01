@@ -1,3 +1,4 @@
+import "server-only";
 import { GoogleGenAI, ThinkingLevel, Type, type Schema } from "@google/genai";
 import { CATEGORIES, type Category, type ConstraintDelta, type EventBrief, type EventPlan } from "@/domain/types";
 import { buildAiContext } from "@/lib/ai-context";
@@ -249,6 +250,7 @@ function schemaDetail(issues: Array<{ path: PropertyKey[]; message: string }>): 
   return issues.slice(0, 4).map((issue) => `${issue.path.join(".") || "plan"}: ${issue.message}`).join("; ");
 }
 
+/** Asks Gemini for the first plan as structured JSON. Throws when the model or the key fails. The route does not invent an event. */
 export async function generateInitialEventPlan(brief: EventBrief): Promise<GeminiPlanDraft> {
   const parsed = await generateJson(
     [
@@ -268,6 +270,7 @@ export async function generateInitialEventPlan(brief: EventBrief): Promise<Gemin
   return result.data;
 }
 
+/** Asks Gemini for trade-off wording. Amounts are checked again in the domain layer. */
 export async function recalculateBudgetTradeoffs(plan: EventPlan, instruction = ""): Promise<GeminiTradeoffDraft> {
   const parsed = await generateJson(
     [
@@ -284,6 +287,7 @@ export async function recalculateBudgetTradeoffs(plan: EventPlan, instruction = 
   return result.data;
 }
 
+/** Asks Gemini for vendor questions and commentary. It does not confirm a price or availability. */
 export async function compareVendorQuotes(input: {
   category: Category;
   mustHaves: string;
@@ -308,6 +312,7 @@ export async function compareVendorQuotes(input: {
   return result.data;
 }
 
+/** Asks Gemini for notes on the existing task ids. Due dates stay in `scheduleTasks`. */
 export async function rescheduleTimelineWithDependencies(plan: EventPlan, eventDate: string): Promise<GeminiTimelineDraft> {
   const parsed = await generateJson(
     [
@@ -341,6 +346,7 @@ export async function reviseEventPlan(
   };
 }
 
+/** Reads a revision sentence when the local parser has not already settled the guest, budget, or date change. */
 export async function extractConstraintDelta(plan: EventPlan, instruction: string): Promise<ConstraintDelta> {
   const parsed = await generateJson(
     [
@@ -385,6 +391,7 @@ export async function extractConstraintDelta(plan: EventPlan, instruction: strin
   return delta;
 }
 
+/** Asks Gemini for occasion-specific ideas. Guest names and emails are not included in the prompt. */
 export async function generateIdeas(plan: EventPlan): Promise<Array<{ id: string; title: string; summary: string; estimatedCostInr: number; taskTitle: string }>> {
   const parsed = await generateJson(
     [

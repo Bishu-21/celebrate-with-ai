@@ -16,7 +16,7 @@ export function Hero() {
         <span className="italic text-gold">Keep the constraints honest.</span>
       </h1>
       <p className="mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
-        Weddings, birthdays, and community events become one plan: a clarifying intake, budget trade-offs, a timeline with dependencies, vendor questions, RSVPs, and a checklist. A later constraint updates that same plan.
+        A planning assistant for weddings, birthdays, and community events, with budgets, timelines, vendor checklists, and personalized ideas. The clarifying intake comes first. A later constraint updates that same plan.
       </p>
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Link href="/planner" className="inline-flex min-h-12 items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground">

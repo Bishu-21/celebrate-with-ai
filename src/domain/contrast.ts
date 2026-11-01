@@ -11,6 +11,8 @@ export const PALETTE = {
   muted: "#17141C",
   danger: "#FB7185",
   dangerStrong: "#9F1239",
+  mutedForeground: "#C9BEB4",
+  surface: "#14111A",
 } as const;
 
 function channel(hex: string, start: number): number {
@@ -42,4 +44,6 @@ export const CONTRAST_PAIRS = [
   { name: "success text", foreground: PALETTE.ok, background: PALETTE.background, minimum: 4.5 },
   { name: "danger badge", foreground: PALETTE.onPrimary, background: PALETTE.dangerStrong, minimum: 4.5 },
   { name: "muted panel text", foreground: PALETTE.foreground, background: PALETTE.muted, minimum: 4.5 },
+  { name: "secondary text", foreground: PALETTE.mutedForeground, background: PALETTE.background, minimum: 4.5 },
+  { name: "secondary text on glass", foreground: PALETTE.mutedForeground, background: PALETTE.surface, minimum: 4.5 },
 ] as const;

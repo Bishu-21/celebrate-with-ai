@@ -136,11 +136,12 @@ export function proposeTradeoffs(
   const top = priorities[0] ?? "catering";
   const lowestFirst = [...priorities].reverse().filter((category) => category !== top);
   const protective = lines.map((line) => ({ ...line, isEstimated: true }));
+  const byCategory = new Map(protective.map((line) => [line.category, line]));
   let remaining = excess;
 
   for (const category of lowestFirst) {
     if (remaining <= 0) break;
-    const line = protective.find((item) => item.category === category);
+    const line = byCategory.get(category);
     if (!line) continue;
     const reducible = isLocked(line) ? 0 : Math.max(0, line.amountInr - floorFor(category, budgetInr));
     const cut = Math.min(reducible, remaining);
@@ -152,7 +153,7 @@ export function proposeTradeoffs(
   }
 
   if (remaining > 0) {
-    const topLine = protective.find((item) => item.category === top);
+    const topLine = byCategory.get(top);
     if (topLine && !isLocked(topLine)) {
       const reducible = Math.max(0, topLine.amountInr - floorFor(top, budgetInr));
       const cut = Math.min(reducible, remaining);

@@ -1,6 +1,6 @@
 # Marigold — Celebration & Event Planner (Hack2skill Challenge 5)
 
-Marigold is a web planner for weddings, birthdays, and community events. It keeps one stateful plan: a clarifying intake, a budget with priority trade-offs, a dependency-aware timeline, vendor questions and quote comparison, guest RSVPs, and an interactive checklist.
+Marigold is a GenAI planning assistant for weddings, birthdays, and community events, with budgets, timelines, vendor checklists, and personalized ideas. It keeps one stateful plan: a clarifying intake, priority trade-offs, a dependency-aware timeline, vendor questions and quote comparison, guest RSVPs, and an interactive checklist.
 
 Gemini drafts and rewrites the words. TypeScript recomputes the money, the dates, and the headcount.
 
@@ -12,7 +12,7 @@ Gemini drafts and rewrites the words. TypeScript recomputes the money, the dates
 | AI itinerary and plan generation | `generateInitialEventPlan` in `src/lib/gemini.ts`, `POST /api/plan/generate` |
 | Budget tracking and trade-offs | `src/domain/budget.ts`, `recalculateBudgetTradeoffs`, `POST /api/plan/tradeoffs` |
 | Dependency-aware timeline | `src/domain/timeline.ts`, `rescheduleTimelineWithDependencies`, `POST /api/plan/timeline` |
-| Vendor checklist, questions, and quote comparison | `compareVendorQuotes`, `POST /api/vendors/questions`, `POST /api/vendors/compare` |
+| Vendor checklist, questions, and quote comparison | `Vendor checklist` board, `compareVendorQuotes`, `POST /api/vendors/questions`, `POST /api/vendors/compare` |
 | Guest RSVP management | `src/domain/guests.ts`, Guests board |
 | Interactive checklist | `src/components/planner/ChecklistBoard.tsx` |
 | Occasion-specific ideas | `generateIdeas`, `POST /api/plan/ideas`, `src/domain/occasion-templates.ts` |
@@ -58,7 +58,7 @@ Attempt 1:
 - Budget, timeline, vendor, guest, checklist, and idea boards load with `next/dynamic`. The intake and overview stay in the first planner chunk.
 - One Gemini client is reused for the server process. Response schemas share one budget-line shape.
 - A settled revision skips `extractConstraintDelta`. The two advisory calls run only for fields that changed, and they run together when both are needed.
-- Timeline ordering walks each task and edge once per pass. Due dates take the earliest child start in one pass.
+- Cycle removal walks the task graph once per removed edge. Due dates take the earliest child start in one memoized pass. Category lookups during a trade-off use a map, not a scan per category.
 - Saving a plan reuses the parsed copy already in memory when the browser text has not changed.
 - The rate limiter keeps a sliding window per caller and prunes the key map in batches.
 - Currency and guest totals reuse one formatter and one pass over the guest list.
@@ -69,7 +69,7 @@ Attempt 1:
 
 Security:
 
-- No API key in source. Copy `.env.example` to `.env.local`.
+- No API key in source. Copy `.env.example` to `.env.local`. `src/lib/gemini.ts` imports `server-only`, so the client bundle cannot load the Gemini client.
 - Zod validates every API body in `src/lib/schemas.ts`.
 - Text is trimmed. Control characters and bidi overrides are stripped from API JSON and from the plan saved in the browser. Keys named `__proto__`, `constructor`, and `prototype` are dropped.
 - A request with an `Origin` from another site is rejected. A body that is not `application/json`, or is over 120 KB, is rejected. A missing `Origin` is still accepted so same-machine checks keep working.
@@ -87,18 +87,19 @@ Accessibility:
 - The mobile plan menu is a modal dialog. Focus moves inside it, Tab stays inside it, and Escape closes it. The rest of the planner is `inert` while it is open.
 - Timeline status buttons and idea actions include the item name. Budget and vendor tables have captions. Checklist boxes are named by their labels.
 - A skip link points at `#planner-main`.
-- `tests/contrast.test.ts` checks the palette against WCAG AA. `tests/a11y.test.tsx` checks labels, the plan menu, and named timeline actions.
+- `tests/contrast.test.ts` checks the palette against WCAG AA, including secondary text on the page and on glass. `tests/a11y.test.tsx` checks labels, the plan menu, and named timeline actions. `tests/axe.test.tsx` runs axe-core on the landing page and the intake form. The phone header opens a modal for Product, How it works, and FAQ.
 
 ## Testing
 
 ```bash
 npm test
+npm run test:coverage
 npm run lint
 npm run typecheck
 npm run build
 ```
 
-Vitest does not call Gemini. These tests map to the challenge:
+`npm run test:coverage` checks the domain and request libraries. The current run is 79% lines, 73% statements, 73% functions, and 60% branches, and CI fails if those fall under 78, 72, 70, and 58. CI then runs lint, typecheck, and `npm audit --omit=dev`. Vitest does not call Gemini. These tests map to the challenge:
 
 | Requirement | Test |
 | --- | --- |
@@ -110,7 +111,7 @@ Vitest does not call Gemini. These tests map to the challenge:
 | Local vendor questions when the model is down | `tests/vendor-questions.test.ts` |
 | RSVP headcount and occasion-specific ideas | `tests/guests.test.ts`, `tests/ideas.test.ts` |
 | Same-origin JSON, control-character stripping, and platform IP keying | `tests/http-security.test.ts` |
-| Labels, modal plan menu, and named timeline actions | `tests/a11y.test.tsx` |
+| Labels, modal plan menu, named timeline actions, and axe on the landing page and intake | `tests/a11y.test.tsx`, `tests/axe.test.tsx` |
 | Checklist keyboard toggle linked to a task | `tests/checklist.test.tsx`, `tests/commands.test.ts` |
 
 ## Run locally

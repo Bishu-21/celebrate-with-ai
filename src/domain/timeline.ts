@@ -16,24 +16,31 @@ function durationOf(task: Pick<TimelineTask, "durationDays">): number {
   return Math.max(1, Math.round(task.durationDays));
 }
 
+/** Drops self-edges, unknown edges, and duplicate edges, then removes one back edge per cycle. Each pass is a single Kahn traversal, so the loop runs at most once per task. */
 export function breakCycles(tasks: TaskDraft[]): TaskDraft[] {
   const ids = new Set(tasks.map((task) => task.id));
-  const cleaned = tasks.map((task) => ({
-    ...task,
-    dependencies: task.dependencies.filter((dependency, index, list) =>
-      dependency !== task.id && ids.has(dependency) && list.indexOf(dependency) === index,
-    ),
-  }));
-
-  const incoming = new Map(cleaned.map((task) => [task.id, [...task.dependencies]]));
-
-  for (let guard = 0; guard < cleaned.length * cleaned.length + 1; guard += 1) {
-    const children = new Map<string, string[]>(cleaned.map((task) => [task.id, []]));
-    for (const task of cleaned) {
-      for (const dependency of incoming.get(task.id) ?? []) children.get(dependency)?.push(task.id);
+  const incoming = new Map<string, string[]>();
+  for (const task of tasks) {
+    const seen = new Set<string>();
+    const dependencies: string[] = [];
+    for (const dependency of task.dependencies) {
+      if (dependency === task.id || !ids.has(dependency) || seen.has(dependency)) continue;
+      seen.add(dependency);
+      dependencies.push(dependency);
     }
-    const indegree = new Map<string, number>(cleaned.map((task) => [task.id, (incoming.get(task.id) ?? []).length]));
-    const queue = cleaned.filter((task) => (indegree.get(task.id) ?? 0) === 0).map((task) => task.id);
+    incoming.set(task.id, dependencies);
+  }
+
+  for (let pass = 0; pass < tasks.length; pass += 1) {
+    const children = new Map<string, string[]>(tasks.map((task) => [task.id, []]));
+    const indegree = new Map<string, number>(tasks.map((task) => [task.id, 0]));
+    for (const task of tasks) {
+      for (const dependency of incoming.get(task.id) ?? []) {
+        indegree.set(task.id, (indegree.get(task.id) ?? 0) + 1);
+        children.get(dependency)?.push(task.id);
+      }
+    }
+    const queue = tasks.filter((task) => (indegree.get(task.id) ?? 0) === 0).map((task) => task.id);
     const seen = new Set<string>();
     let head = 0;
     while (head < queue.length) {
@@ -46,13 +53,14 @@ export function breakCycles(tasks: TaskDraft[]): TaskDraft[] {
         if ((indegree.get(child) ?? 0) === 0) queue.push(child);
       }
     }
-    if (seen.size === cleaned.length) break;
-    const stuck = cleaned.find((task) => !seen.has(task.id) && (incoming.get(task.id) ?? []).length > 0);
+    if (seen.size === tasks.length) break;
+    const stuck = tasks.find((task) => !seen.has(task.id) && (incoming.get(task.id) ?? []).length > 0);
     if (!stuck) break;
-    incoming.set(stuck.id, (incoming.get(stuck.id) ?? []).slice(0, -1));
+    const dependencies = incoming.get(stuck.id) ?? [];
+    incoming.set(stuck.id, dependencies.slice(0, -1));
   }
 
-  return cleaned.map((task) => ({ ...task, dependencies: incoming.get(task.id) ?? [] }));
+  return tasks.map((task) => ({ ...task, dependencies: incoming.get(task.id) ?? task.dependencies }));
 }
 
 export function topologicalOrder(tasks: Pick<TimelineTask, "id" | "dependencies">[]): string[] {

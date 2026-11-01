@@ -51,10 +51,10 @@ export const GuestBoard = memo(function GuestBoard({
         }}
       >
         <Field label="Name">
-          <TextInput value={name} onChange={(event) => setName(event.target.value)} required />
+          <TextInput autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required />
         </Field>
         <Field label="Email" hint="Optional.">
-          <TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <TextInput type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />
         </Field>
         <Field label="Party size">
           <TextInput type="number" min={1} max={20} value={partySize} onChange={(event) => setPartySize(Number(event.target.value))} />

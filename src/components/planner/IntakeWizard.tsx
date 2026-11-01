@@ -115,6 +115,7 @@ export function IntakeWizard({
             </Field>
             <Field label="City">
               <TextInput
+                autoComplete="address-level2"
                 value={brief.city}
                 onChange={(event) => update({ city: event.target.value })}
                 invalid={Boolean(fieldError) && brief.city.trim().length < 2}

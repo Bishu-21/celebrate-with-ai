@@ -60,9 +60,12 @@ export function planFromDraft(
   );
 
   const questionsByCategory = new Map<Category, string[]>();
+  const mustHavesByCategory = new Map<Category, string>();
   for (const briefItem of draft.vendorBriefs) {
     questionsByCategory.set(briefItem.category, briefItem.questions);
+    mustHavesByCategory.set(briefItem.category, briefItem.mustHaves);
   }
+  const planAmount = new Map(budgetBreakdown.map((line) => [line.category, line.amountInr]));
 
   return {
     ...local,
@@ -75,15 +78,15 @@ export function planFromDraft(
         scenario.lines.map((line) => ({ ...line, isEstimated: true })),
         brief.budgetInr,
       );
-      const sameAsPlan = lines.every((line) => line.amountInr === budgetBreakdown.find((item) => item.category === line.category)?.amountInr);
+      const sameAsPlan = lines.every((line) => line.amountInr === planAmount.get(line.category));
       if (sameAsPlan || !protectsTopPriority(budgetBreakdown, lines, scenario.protectedPriority)) return [];
       return [{ ...scenario, protectedPriority: scenario.protectedPriority, lines }];
     }),
     vendorBriefs: local.vendorBriefs.map((item) => ({
       ...item,
       guestCoverage: brief.guestCount,
-      budgetCapInr: budgetBreakdown.find((line) => line.category === item.category)?.amountInr ?? item.budgetCapInr,
-      mustHaves: draft.vendorBriefs.find((entry) => entry.category === item.category)?.mustHaves || item.mustHaves,
+      budgetCapInr: planAmount.get(item.category) ?? item.budgetCapInr,
+      mustHaves: mustHavesByCategory.get(item.category) || item.mustHaves,
       questions: questionsByCategory.get(item.category) ?? item.questions,
     })),
     checklist: checklistFromDraft(draft.checklist, timelineTasks),

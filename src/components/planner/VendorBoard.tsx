@@ -36,7 +36,7 @@ export function VendorBoard({
 
   return (
     <section aria-labelledby="vendor-heading">
-      <h2 id="vendor-heading" className="font-serif text-4xl">Vendors</h2>
+      <h2 id="vendor-heading" className="font-serif text-4xl">Vendor checklist</h2>
       <p className="mt-1 text-sm text-muted-foreground">Paste quotations you already have. Marigold does not invent who is free that weekend.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-[16rem_1fr]">
         <Field label="Category">
@@ -55,11 +55,14 @@ export function VendorBoard({
         {busy ? "Asking Gemini…" : "Draft vendor questions"}
       </Button>
       {questions.length ? (
-        <ul className="glass mt-4 list-disc space-y-1 rounded-[28px] p-6 pl-10 text-sm">
-          {questions.map((question) => (
-            <li key={question}>{question}</li>
-          ))}
-        </ul>
+        <div className="glass mt-4 rounded-[28px] p-6">
+          <h3 className="font-serif text-2xl">Questions to ask</h3>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+            {questions.map((question) => (
+              <li key={question}>{question}</li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       <div className="mt-6 grid gap-3 lg:grid-cols-2">
         {quotes.map((quote, index) => (

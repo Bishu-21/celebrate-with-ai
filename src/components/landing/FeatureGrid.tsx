@@ -2,7 +2,7 @@ const FEATURES = [
   { index: "01", title: "Clarifying intake", body: "Occasion, budget, guests, date, vibe, and the priorities you refuse to cut first." },
   { index: "02", title: "Budget trade-offs", body: "Estimates stay labelled as estimates. Overages propose cuts that protect your top priority." },
   { index: "03", title: "Dependency timeline", body: "Venue and date lock before secondary vendors. A new date pulls the sequence with it." },
-  { index: "04", title: "Vendor comparison", body: "Questions to ask, then a side-by-side of quotes you collected. No fake availability." },
+  { index: "04", title: "Vendor checklist", body: "Questions to ask each vendor, then a side-by-side of quotes you collected. No fake availability." },
   { index: "05", title: "Guest RSVP", body: "Yes and maybe party sizes become the catering headcount." },
   { index: "06", title: "In-place revision", body: "“We have 50 more guests, the budget dropped by ₹2,00,000, and the event is 2 weeks earlier.” That sentence updates this plan. It does not start a new one." },
   { index: "07", title: "Interactive checklist", body: "Checking an item finishes the linked task. Finishing the task checks the item." },
