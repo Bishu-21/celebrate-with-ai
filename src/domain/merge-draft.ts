@@ -1,4 +1,4 @@
-import { protectsTopPriority } from "@/domain/budget";
+import { isValidBudgetScenario } from "@/domain/budget";
 import { sumAmounts } from "@/domain/money";
 import { buildLocalPlan } from "@/domain/local-plan";
 import { scheduleTasks } from "@/domain/timeline";
@@ -23,13 +23,16 @@ function scaleLines(lines: BudgetLine[], budgetInr: number): BudgetLine[] {
       amountInr: index === 0 ? budgetInr : 0,
     }));
   }
-  const scaled = complete.map((line) => ({
+  // Largest-remainder allocation keeps every category nonnegative and the total exact.
+  const exact = complete.map((line) => (line.amountInr / current) * budgetInr);
+  const scaled = complete.map((line, index) => ({
     ...line,
-    amountInr: Math.round((line.amountInr / current) * budgetInr),
+    amountInr: Math.floor(exact[index]),
   }));
-  const drift = budgetInr - sumAmounts(scaled);
-  const target = scaled.find((line) => line.category === "miscellaneous") ?? scaled[0];
-  target.amountInr += drift;
+  const remainder = budgetInr - sumAmounts(scaled);
+  const order = exact.map((amount, index) => ({ index, fraction: amount - Math.floor(amount) }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+  for (let index = 0; index < remainder; index += 1) scaled[order[index % order.length].index].amountInr += 1;
   return scaled;
 }
 
@@ -43,7 +46,7 @@ export function planFromDraft(
   const budgetBreakdown = scaleLines(
     draft.budgetBreakdown.map((line) => ({ ...line, isEstimated: true })),
     brief.budgetInr,
-  );
+  ).map((line) => ({ ...line, origin: "gemini" as const }));
 
   const timelineTasks = scheduleTasks(
     draft.timelineTasks.map((task) => ({
@@ -79,8 +82,9 @@ export function planFromDraft(
         brief.budgetInr,
       );
       const sameAsPlan = lines.every((line) => line.amountInr === planAmount.get(line.category));
-      if (sameAsPlan || !protectsTopPriority(budgetBreakdown, lines, scenario.protectedPriority)) return [];
-      return [{ ...scenario, protectedPriority: scenario.protectedPriority, lines }];
+      const top = brief.priorities[0] ?? "catering";
+      if (sameAsPlan || !isValidBudgetScenario(budgetBreakdown, lines, brief.budgetInr, top)) return [];
+      return [{ ...scenario, protectedPriority: top, lines }];
     }),
     vendorBriefs: local.vendorBriefs.map((item) => ({
       ...item,
@@ -141,13 +145,16 @@ export function applyTradeoffDraft(plan: EventPlan, draft: GeminiTradeoffDraft):
       id: scenario.id,
       title: scenario.title,
       summary: scenario.summary || draft.summary,
-      protectedPriority: scenario.protectedPriority,
-      lines: scenario.lines.map((line) => ({ ...line, isEstimated: true })),
+      protectedPriority: plan.priorities[0] ?? "catering",
+      lines: scenario.lines.map((line) => {
+        const existing = plan.budgetBreakdown.find((item) => item.category === line.category);
+        return existing && (!existing.isEstimated || existing.origin === "quote") && existing.amountInr === line.amountInr
+          ? existing : { ...line, isEstimated: true, origin: "gemini" as const };
+      }),
     }))
     .filter(
       (scenario) =>
-        sumAmounts(scenario.lines) === plan.budgetInr &&
-        protectsTopPriority(plan.budgetBreakdown, scenario.lines, scenario.protectedPriority),
+        isValidBudgetScenario(plan.budgetBreakdown, scenario.lines, plan.budgetInr, scenario.protectedPriority),
     );
   return {
     ...plan,

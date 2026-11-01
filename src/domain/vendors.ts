@@ -1,6 +1,18 @@
-import { CATEGORY_LABELS, type Category, type VendorComparisonRow, type VendorQuote } from "@/domain/types";
+import { CATEGORY_LABELS, type Category, type EventPlan, type VendorComparisonRow, type VendorQuote } from "@/domain/types";
 
 const HIDDEN_CHARGE_PATTERN = /\b(gst|tax|taxes|extra|overtime|hidden|additional|service charge|transport)\b/i;
+
+export function synchronizeVendorCaps(plan: EventPlan): EventPlan {
+  const caps = new Map(plan.budgetBreakdown.map((line) => [line.category, line.amountInr]));
+  let changed = false;
+  const vendorBriefs = plan.vendorBriefs.map((brief) => {
+    const amount = caps.get(brief.category);
+    if (amount === undefined || amount === brief.budgetCapInr) return brief;
+    changed = true;
+    return { ...brief, budgetCapInr: amount };
+  });
+  return changed ? { ...plan, vendorBriefs } : plan;
+}
 
 export function localVendorQuestions(input: {
   category: Category;

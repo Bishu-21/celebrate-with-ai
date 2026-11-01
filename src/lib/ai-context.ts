@@ -1,14 +1,11 @@
 import { guestSummary } from "@/domain/guests";
 import type { EventPlan } from "@/domain/types";
 
-const MAX_CONTEXT_CHARS = 24_000;
+export type AiOperation = "tradeoffs" | "timeline" | "ideas";
 
-export function buildAiContext(plan: EventPlan): Record<string, unknown> {
-  const rsvp = guestSummary(plan.guests);
-  const context = {
-    planId: plan.id,
+export function buildAiContext(plan: EventPlan, operation: AiOperation = "ideas"): Record<string, unknown> {
+  const context: Record<string, unknown> = {
     occasion: plan.occasion,
-    title: plan.title,
     city: plan.city,
     eventDate: plan.eventDate,
     guestCount: plan.guestCount,
@@ -16,35 +13,27 @@ export function buildAiContext(plan: EventPlan): Record<string, unknown> {
     vibe: plan.vibe,
     priorities: plan.priorities,
     notes: plan.notes,
-    budgetBreakdown: plan.budgetBreakdown.map((line) => ({
+  };
+  if (operation === "tradeoffs") {
+    context.budgetBreakdown = plan.budgetBreakdown.map((line) => ({
       category: line.category,
       amountInr: line.amountInr,
       isEstimated: line.isEstimated,
-      assumption: line.assumption,
-    })),
-    timelineTasks: plan.timelineTasks.map((task) => ({
+    }));
+  } else if (operation === "timeline") {
+    context.timelineTasks = plan.timelineTasks.map((task) => ({
       id: task.id,
       title: task.title,
       durationDays: task.durationDays,
       dependencies: task.dependencies,
       priority: task.priority,
       status: task.status,
-      note: task.note,
-    })),
-    vendorBriefs: plan.vendorBriefs.map((brief) => ({
-      category: brief.category,
-      mustHaves: brief.mustHaves,
-      guestCoverage: brief.guestCoverage,
-      budgetCapInr: brief.budgetCapInr,
-    })),
-    rsvp,
-  };
-  const serialized = JSON.stringify(context);
-  if (serialized.length <= MAX_CONTEXT_CHARS) return context;
-  return {
-    ...context,
-    notes: plan.notes.slice(0, 500),
-    timelineTasks: plan.timelineTasks.slice(0, 12).map((task) => ({ id: task.id, title: task.title, status: task.status, dependencies: task.dependencies })),
-    vendorBriefs: plan.vendorBriefs.slice(0, 4).map((brief) => ({ category: brief.category, budgetCapInr: brief.budgetCapInr })),
-  };
+    }));
+  } else {
+    context.rsvp = guestSummary(plan.guests);
+    context.existingIdeas = (plan.ideas ?? []).map(({ title, status }) => ({ title, status }));
+  }
+  // Bound context without losing identities or cutting a serialized JSON string.
+  if (JSON.stringify(context).length > 64_000) throw new Error("The planning context is too large. Shorten task descriptions before trying again.");
+  return context;
 }

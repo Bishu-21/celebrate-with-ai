@@ -32,7 +32,7 @@ function parseEnvelope(raw: string): Envelope | null {
   }
   if (!parsed || typeof parsed !== "object") return null;
   const record = parsed as { schemaVersion?: unknown; revision?: unknown; plan?: unknown };
-  if (record.schemaVersion !== 2 || typeof record.revision !== "number" || !Number.isInteger(record.revision)) return null;
+  if (record.schemaVersion !== 2 || typeof record.revision !== "number" || !Number.isSafeInteger(record.revision) || record.revision < 0) return null;
   const plan = eventPlanSchema.safeParse(record.plan);
   if (!plan.success) return null;
   return { schemaVersion: 2, revision: record.revision, plan: plan.data };
@@ -85,6 +85,11 @@ function readStored(): StorageResult {
   return { ok: true, plan, revision: 1, migrated: true };
 }
 
+function storageUnavailable(): StorageResult {
+  storageIssue = "Browser storage is unavailable. Your last loaded plan is still available in this tab.";
+  return { ok: false, reason: "quota", message: storageIssue };
+}
+
 function writeEnvelope(envelope: Envelope): StorageResult {
   const raw = JSON.stringify(envelope);
   try {
@@ -105,7 +110,7 @@ function ensureListener(): void {
   if (listening || typeof window === "undefined") return;
   listening = true;
   window.addEventListener("storage", (event) => {
-    if (event.key !== STORAGE_KEY && event.key !== LEGACY_KEY) return;
+    if (event.key !== null && event.key !== STORAGE_KEY && event.key !== LEGACY_KEY) return;
     snapshotRaw = undefined;
     emit();
   });
@@ -127,6 +132,7 @@ export function getPlanRevision(): number {
 
 export function loadPlan(): EventPlan | null {
   if (typeof window === "undefined") return null;
+  try {
   const raw = window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_KEY);
   if (raw === snapshotRaw) return snapshot;
   const stored = readStored();
@@ -140,6 +146,10 @@ export function loadPlan(): EventPlan | null {
   snapshotRaw = window.localStorage.getItem(STORAGE_KEY);
   revisionCache = stored.revision;
   return snapshot;
+  } catch {
+    storageUnavailable();
+    return snapshot;
+  }
 }
 
 export function emptyPlan(): null {
@@ -148,6 +158,9 @@ export function emptyPlan(): null {
 
 export function savePlan(plan: EventPlan, expectedRevision = revisionCache): StorageResult {
   if (typeof window === "undefined") return { ok: false, reason: "quota", message: "Storage is only available in the browser." };
+  const validated = eventPlanSchema.safeParse(sanitizeUnknown(plan));
+  if (!validated.success) return { ok: false, reason: "invalid", message: "The plan contains invalid data. Your saved copy was left unchanged." };
+  try {
   const raw = window.localStorage.getItem(STORAGE_KEY);
   let storedRevision: number;
   if (raw !== null && raw === snapshotRaw) {
@@ -163,18 +176,28 @@ export function savePlan(plan: EventPlan, expectedRevision = revisionCache): Sto
       return { ok: false, reason: "conflict", message: "A newer copy of this plan is already saved in this browser." };
     }
   }
-  const result = writeEnvelope({ schemaVersion: 2, revision: storedRevision + 1, plan: sanitizeUnknown(plan) as EventPlan });
+  const result = writeEnvelope({ schemaVersion: 2, revision: storedRevision + 1, plan: validated.data });
   if (result.ok) emit();
   return result;
+  } catch {
+    return storageUnavailable();
+  }
 }
 
-export function clearPlan(): void {
+export function clearPlan(): StorageResult {
+  if (typeof window === "undefined") return storageUnavailable();
+  try {
+    window.localStorage.removeItem(LEGACY_KEY);
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    return storageUnavailable();
+  }
   snapshot = null;
   snapshotRaw = null;
   revisionCache = 0;
   storageIssue = null;
-  window.localStorage.removeItem(STORAGE_KEY);
   emit();
+  return { ok: true, plan: null, revision: 0, migrated: false };
 }
 
 export function refreshPlanFromStorage(): EventPlan | null {

@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${sans.variable} ${serif.variable}`}>
+    <html lang="en" data-scroll-behavior="smooth" className={`${sans.variable} ${serif.variable}`}>
       <body>
         <div className="grain-overlay" aria-hidden="true" />
         <a className="skip-link" href="#planner-main">

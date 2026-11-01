@@ -19,6 +19,43 @@ describe("request security", () => {
     await expect(result.response.json()).resolves.toMatchObject({ code: "cross_origin" });
   });
 
+  it("compares the complete origin including protocol", async () => {
+    const result = await post({ origin: "https://localhost", "content-type": "application/json" }, "{}");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(403);
+  });
+
+  it("accepts the actual HTTP host when Next internally uses a loopback URL", async () => {
+    const result = await post({ origin: "http://127.0.0.1", host: "127.0.0.1", "content-type": "application/json" }, "{}");
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a lookalike JSON media type", async () => {
+    const result = await post({ "content-type": "text/application/json-invalid" }, "{}");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(415);
+  });
+
+  it("stops reading an oversized stream before buffering the entire request", async () => {
+    const cancel = vi.fn();
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(65_000).fill(32));
+        if (pulls >= 10) controller.close();
+      }, cancel,
+    });
+    const request = new Request("http://localhost/api/plan/generate", {
+      method: "POST", headers: { "content-type": "application/json" }, body, duplex: "half",
+    } as RequestInit);
+    const result = await readBody(request);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(413);
+    expect(pulls).toBeLessThan(10);
+    expect(cancel).toHaveBeenCalled();
+  });
+
   it("rejects a body that is not JSON", async () => {
     const result = await post({ origin: "http://localhost", "content-type": "text/plain" }, "hello");
     expect(result.ok).toBe(false);

@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
   pull_request:
@@ -7,6 +10,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,4 +21,5 @@ jobs:
       - run: npm run test:coverage
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run build
       - run: npm audit --omit=dev

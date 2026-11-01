@@ -56,7 +56,9 @@ Attempt 1:
 ## Efficiency
 
 - Budget, timeline, vendor, guest, checklist, and idea boards load with `next/dynamic`. The intake and overview stay in the first planner chunk.
-- One Gemini client is reused for the server process. Response schemas share one budget-line shape.
+- One Gemini client is reused for the server process. Response schemas share one budget-line shape. Identical requests already in progress share one provider operation, and at most eight distinct operations run in one process.
+- Trade-offs receive budget aggregates, timeline notes receive the complete task identity set, and ideas receive occasion constraints. Unrelated task/vendor arrays and guest identities are omitted. Context is bounded without truncating serialized JSON.
+- AI work has a 20-second deadline, SDK cancellation and request timeout, at most one application retry, and explicit output limits (8,192 tokens for the initial plan, 4,096 for later operations). Aborting a client request does not guarantee cancellation or billing reversal at the provider.
 - A settled revision skips `extractConstraintDelta`. The two advisory calls run only for fields that changed, and they run together when both are needed.
 - Cycle removal walks the task graph once per removed edge. Due dates take the earliest child start in one memoized pass. Category lookups during a trade-off use a map, not a scan per category.
 - Saving a plan reuses the parsed copy already in memory when the browser text has not changed.
@@ -72,7 +74,7 @@ Security:
 - No API key in source. Copy `.env.example` to `.env.local`. `src/lib/gemini.ts` imports `server-only`, so the client bundle cannot load the Gemini client.
 - Zod validates every API body in `src/lib/schemas.ts`.
 - Text is trimmed. Control characters and bidi overrides are stripped from API JSON and from the plan saved in the browser. Keys named `__proto__`, `constructor`, and `prototype` are dropped.
-- A request with an `Origin` from another site is rejected. A body that is not `application/json`, or is over 120 KB, is rejected. A missing `Origin` is still accepted so same-machine checks keep working.
+- A request with an `Origin` from another site is rejected using the complete origin, including protocol and port. Only the `application/json` media type is accepted. Body reading stops at 120,000 bytes, including when Content-Length is absent or misleading. A missing `Origin` is still accepted so same-machine checks keep working.
 - Routes are rate-limited. On Vercel, or when `TRUST_FORWARDED_FOR=1`, the key is `x-real-ip`, then the first `x-forwarded-for` hop. Elsewhere every caller shares the local bucket so a spoofed forwarding header cannot dodge the limit.
 - AI text is rendered as text, not HTML.
 - `next.config.ts` sends `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `X-DNS-Prefetch-Control`, `X-Permitted-Cross-Domain-Policies`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, `Permissions-Policy`, and a Content-Security-Policy with `object-src 'none'`. Production also sends HSTS and `upgrade-insecure-requests`. `script-src` still allows inline scripts because Next requires that.
@@ -99,7 +101,7 @@ npm run typecheck
 npm run build
 ```
 
-`npm run test:coverage` checks the domain and request libraries. The current run is 79% lines, 73% statements, 73% functions, and 60% branches, and CI fails if those fall under 78, 72, 70, and 58. CI then runs lint, typecheck, and `npm audit --omit=dev`. Vitest does not call Gemini. These tests map to the challenge:
+`npm run test:coverage` includes all domain modules, all libraries (including the Gemini service and storage), and every API route. CI enforces minimums of 88% lines, 82% statements, 86% functions, and 68% branches, then runs lint with zero warnings, typecheck, a production build, and `npm audit --omit=dev`. Pure domain/API tests run in Node; UI/storage tests run in jsdom. Vitest mocks provider transport and does not consume Gemini credits. The latest verified results and release limitations are recorded in [the submission review](docs/final-submission-review.md). These tests map to the challenge:
 
 | Requirement | Test |
 | --- | --- |
@@ -113,6 +115,19 @@ npm run build
 | Same-origin JSON, control-character stripping, and platform IP keying | `tests/http-security.test.ts` |
 | Labels, modal plan menu, named timeline actions, and axe on the landing page and intake | `tests/a11y.test.tsx`, `tests/axe.test.tsx` |
 | Checklist keyboard toggle linked to a task | `tests/checklist.test.tsx`, `tests/commands.test.ts` |
+| Local fallback visibility, stale responses/previews, and reset errors | `tests/planner-recovery.test.tsx` |
+| Actual route handlers and degraded operation | `tests/api-routes.test.ts` |
+| Provider deadlines, retry bounds, coalescing, and operation-specific context | `tests/ai-efficiency.test.ts` |
+| Quote locks, exact rounding, catering basis, and duplicate idea charges | `tests/final-regressions.test.ts` |
+| Restored vendor inputs and current host requirements | `tests/vendor-workflow.test.tsx` |
+
+## Plan integrity
+
+- A locally recalculated revision remains open when Gemini is unavailable, with honest source labels.
+- Async results are checked against the saved event ID and revision. A stale preview or undo cannot overwrite newer work, including work saved in another tab.
+- Storage validates writes before replacing a durable copy, preserves compatible historical category-scoped quote IDs, and reports read/write/reset failures. Reset removes both the current and legacy plan.
+- Confirmed quotes remain locked in local and AI scenarios. Allocation uses largest remainders so integer rounding cannot make a category negative. Unsupported guest/budget changes are rejected instead of silently clamped.
+- Saved, dismissed, and added ideas survive regeneration; adding an idea twice never charges twice. Vendor caps follow budget changes and quote forms restore saved entries by category.
 
 ## Run locally
 

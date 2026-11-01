@@ -1,6 +1,7 @@
 import { overageInr, proposeTradeoffs, scaleCateringForGuests } from "@/domain/budget";
 import { addDays, isRealIsoDate } from "@/domain/money";
 import { scheduleTasks } from "@/domain/timeline";
+import { synchronizeVendorCaps } from "@/domain/vendors";
 import type { ConstraintDelta, EventPlan } from "@/domain/types";
 
 const MONTHS: Record<string, number> = {
@@ -146,10 +147,15 @@ export function revisePlan(
     return { plan, changes: [], warning: "The event date needs to be a real calendar day before it can move." };
   }
 
-  const nextGuestCount = Math.max(1, delta.absoluteGuestCount ?? plan.guestCount + delta.guestDelta);
-  const nextBudget = Math.max(10_000, delta.absoluteBudgetInr ?? plan.budgetInr + delta.budgetDeltaInr);
+  const nextGuestCount = delta.absoluteGuestCount ?? plan.guestCount + delta.guestDelta;
+  const nextBudget = delta.absoluteBudgetInr ?? plan.budgetInr + delta.budgetDeltaInr;
+  if (!Number.isSafeInteger(nextGuestCount) || nextGuestCount < 1 || nextGuestCount > 5000 || !Number.isSafeInteger(nextBudget) || nextBudget < 10_000 || nextBudget > 50_000_000) {
+    return { plan, changes: [], warning: "Use a guest count from 1 to 5,000 and a budget from ₹10,000 to ₹5,00,00,000. No changes were applied." };
+  }
   const nextDate = delta.absoluteEventDate ?? addDays(plan.eventDate, delta.dayShift);
-  const lines = scaleCateringForGuests(plan.budgetBreakdown, plan.guestCount, nextGuestCount);
+  if (!isRealIsoDate(nextDate)) return { plan, changes: [], warning: "Choose a real event date. No changes were applied." };
+  const guestsChanged = nextGuestCount !== plan.guestCount;
+  const lines = guestsChanged ? scaleCateringForGuests(plan.budgetBreakdown, plan.cateringBasisGuests ?? plan.guestCount, nextGuestCount) : plan.budgetBreakdown;
   const scenarios = proposeTradeoffs(lines, nextBudget, plan.priorities);
   const over = overageInr(lines, nextBudget);
 
@@ -185,15 +191,16 @@ export function revisePlan(
   return {
     changes,
     warning: over > 0 ? "Choose a trade-off before the plan fits the new budget. Confirmed quotes were left as entered." : null,
-    plan: {
+    plan: synchronizeVendorCaps({
       ...plan,
       guestCount: nextGuestCount,
+      cateringBasisGuests: guestsChanged ? nextGuestCount : plan.cateringBasisGuests,
       budgetInr: nextBudget,
       eventDate: nextDate,
       budgetBreakdown: lines,
       timelineTasks,
       tradeOffScenarios: scenarios,
       vendorBriefs: plan.vendorBriefs.map((brief) => ({ ...brief, guestCoverage: nextGuestCount })),
-    },
+    }),
   };
 }

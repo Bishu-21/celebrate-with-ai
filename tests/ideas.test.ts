@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { localIdeas } from "@/domain/ideas";
+import { localIdeas, mergeIdeas } from "@/domain/ideas";
 import { buildLocalPlan } from "@/domain/local-plan";
 import { FIXTURE_BRIEF } from "./brief";
 
 describe("occasion ideas", () => {
+  it("preserves saved, dismissed, and added choices when suggestions are regenerated", () => {
+    const suggested = localIdeas({ occasion: "birthday", budgetInr: 40000 });
+    const existing = suggested.map((idea, i) => ({ ...idea, status: (["added", "saved", "dismissed"] as const)[i] }));
+    expect(mergeIdeas(existing, suggested)).toEqual(existing);
+  });
   it("keeps a low-budget birthday away from wedding rituals", () => {
     const ideas = localIdeas({ occasion: "birthday", budgetInr: 40_000 });
     expect(ideas.length).toBeGreaterThan(0);

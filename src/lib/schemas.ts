@@ -21,7 +21,7 @@ export const eventBriefSchema = z.object({
   guestCount: z.number().int().min(1).max(5000),
   budgetInr: z.number().int().min(10_000).max(50_000_000),
   vibe: z.enum(VIBES),
-  priorities: z.array(categorySchema).min(1).max(CATEGORIES.length),
+  priorities: z.array(categorySchema).min(1).max(CATEGORIES.length).refine((items) => new Set(items).size === items.length, "Priorities must be unique."),
   notes: z.string().trim().max(1000),
 });
 
@@ -113,7 +113,32 @@ const planFields = {
   })).max(24).optional(),
 };
 
-export const eventPlanSchema = eventBriefSchema.extend(planFields);
+export const eventPlanSchema = eventBriefSchema.extend(planFields).superRefine((plan, context) => {
+  const unique = (items: Array<{ id: string }>, path: string) => {
+    if (new Set(items.map((item) => item.id)).size !== items.length) {
+      context.addIssue({ code: "custom", message: "Identifiers must be unique.", path: [path] });
+    }
+  };
+  unique(plan.timelineTasks, "timelineTasks");
+  unique(plan.checklist, "checklist");
+  unique(plan.guests, "guests");
+  // Older saved plans used quote-1/quote-2 in each category. Those IDs are unambiguous within a category.
+  unique(plan.quotes.map((quote) => ({ id: `${quote.category}:${quote.id}` })), "quotes");
+  unique(plan.ideas ?? [], "ideas");
+  const categories = new Set(plan.budgetBreakdown.map((line) => line.category));
+  if (plan.budgetBreakdown.length !== CATEGORIES.length || categories.size !== CATEGORIES.length) {
+    context.addIssue({ code: "custom", message: "Include each budget category exactly once.", path: ["budgetBreakdown"] });
+  }
+  const taskIds = new Set(plan.timelineTasks.map((task) => task.id));
+  for (const [index, item] of plan.checklist.entries()) {
+    if (item.taskId && !taskIds.has(item.taskId)) context.addIssue({ code: "custom", message: "Linked task does not exist.", path: ["checklist", index, "taskId"] });
+  }
+  for (const [index, task] of plan.timelineTasks.entries()) {
+    if (task.dependencies.some((id) => id === task.id || !taskIds.has(id))) {
+      context.addIssue({ code: "custom", message: "Dependencies must reference other existing tasks.", path: ["timelineTasks", index, "dependencies"] });
+    }
+  }
+});
 
 export const generateRequestSchema = z.object({ brief: eventBriefSchema });
 

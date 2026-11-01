@@ -5,14 +5,16 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { overageInr } from "@/domain/budget";
 import { applyPlanCommand, type PlanCommand } from "@/domain/commands";
 import { headcount } from "@/domain/guests";
+import { mergeIdeas } from "@/domain/ideas";
 import { formatInr } from "@/domain/money";
 import { validateTaskGraph } from "@/domain/timeline";
-import { mergeQuotes } from "@/domain/vendors";
+import { compareVendorQuotes, mergeQuotes } from "@/domain/vendors";
 import { CATEGORY_LABELS, type Category, type EventBrief, type EventPlan, type GuestStatus, type PersonalizedIdea, type TaskStatus, type VendorComparisonRow, type VendorQuote } from "@/domain/types";
 import { IntakeWizard } from "@/components/planner/IntakeWizard";
 import { PlannerShell, type SectionId } from "@/components/planner/PlannerShell";
 import { RevisionComposer } from "@/components/planner/RevisionComposer";
 import { Button } from "@/components/ui/Button";
+import { assertPlanVersion, capturePlanVersion, postJson, type PlanVersion } from "@/lib/client-api";
 import { clearPlan, emptyPlan, getPlanRevision, getStorageIssue, loadPlan, savePlan, subscribePlan } from "@/lib/storage";
 
 function SectionFallback() {
@@ -28,17 +30,6 @@ const VendorBoard = dynamic(() => import("@/components/planner/VendorBoard").the
 
 type ApiPlan = { source: "gemini" | "local"; plan: EventPlan; warning?: string | null; changes?: string[] };
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error || "The planner could not complete that request.");
-  return data;
-}
-
 function todayStamp(): string {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -48,7 +39,7 @@ function todayStamp(): string {
 
 export function PlannerApp() {
   const storedPlan = useSyncExternalStore(subscribePlan, loadPlan, emptyPlan);
-  const plan = storedPlan?.source === "gemini" ? storedPlan : null;
+  const plan = storedPlan;
   const [section, setSection] = useState<SectionId>("overview");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -57,8 +48,8 @@ export function PlannerApp() {
   const [vendorCategory, setVendorCategory] = useState<Category>("catering");
   const [questions, setQuestions] = useState<string[]>([]);
   const [rows, setRows] = useState<VendorComparisonRow[]>([]);
-  const [preview, setPreview] = useState<ApiPlan | null>(null);
-  const [undoPlan, setUndoPlan] = useState<EventPlan | null>(null);
+  const [preview, setPreview] = useState<(ApiPlan & { version: PlanVersion }) | null>(null);
+  const [undoPlan, setUndoPlan] = useState<{ plan: EventPlan; version: PlanVersion } | null>(null);
 
   const rsvpHeadcount = useMemo(() => (plan ? headcount(plan.guests) : 0), [plan]);
   const vendorCapInr = useMemo(
@@ -207,7 +198,7 @@ export function PlannerApp() {
                   setError("A newer copy of this plan was saved. The preview was discarded.");
                   return;
                 }
-                setPreview(result);
+                setPreview({ ...result, version: capturePlanVersion() });
                 setChanges(result.changes ?? []);
                 setWarning(result.warning ?? null);
               } catch (reason) {
@@ -226,8 +217,16 @@ export function PlannerApp() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                   onClick={() => {
-                    setUndoPlan(plan);
-                    if (commitPlan(preview.plan, preview.warning)) setPreview(null);
+                    try {
+                      assertPlanVersion(preview.version);
+                      if (commitPlan(preview.plan, preview.warning, preview.version.revision)) {
+                        setUndoPlan({ plan, version: capturePlanVersion() });
+                        setPreview(null);
+                      }
+                    } catch (reason) {
+                      setError(reason instanceof Error ? reason.message : "The plan changed. Generate another preview.");
+                      setPreview(null);
+                    }
                   }}
                 >
                   Accept revision
@@ -240,9 +239,15 @@ export function PlannerApp() {
             <Button
               variant="ghost"
               onClick={() => {
-                if (commitPlan(undoPlan, "Restored the plan from before the last accepted revision.")) {
+                try {
+                  assertPlanVersion(undoPlan.version);
+                  if (commitPlan(undoPlan.plan, "Restored the plan from before the last accepted revision.", undoPlan.version.revision)) {
+                    setUndoPlan(null);
+                    setChanges([]);
+                  }
+                } catch (reason) {
+                  setError(reason instanceof Error ? reason.message : "The plan changed since that revision.");
                   setUndoPlan(null);
-                  setChanges([]);
                 }
               }}
             >
@@ -253,8 +258,17 @@ export function PlannerApp() {
           <Button
             variant="ghost"
             onClick={() => {
-              clearPlan();
+              const cleared = clearPlan();
+              if (!cleared.ok) {
+                setError(cleared.message);
+                return;
+              }
               setChanges([]);
+              setPreview(null);
+              setUndoPlan(null);
+              setQuestions([]);
+              setRows([]);
+              setWarning(null);
             }}
           >
             Start over
@@ -305,13 +319,21 @@ export function PlannerApp() {
 
       {section === "vendors" ? (
         <VendorBoard
+          key={`${plan.id}-${vendorCategory}`}
           category={vendorCategory}
           capInr={vendorCapInr}
-          questions={questions}
-          rows={rows}
+          savedQuotes={plan.quotes.filter((quote) => quote.category === vendorCategory)}
+          initialMustHaves={plan.vendorBriefs.find((brief) => brief.category === vendorCategory)?.mustHaves || plan.notes}
+          questions={questions.length ? questions : plan.vendorBriefs.find((brief) => brief.category === vendorCategory)?.questions ?? []}
+          rows={rows.length ? rows : compareVendorQuotes(plan.quotes.filter((quote) => quote.category === vendorCategory), plan.guestCount, { [vendorCategory]: vendorCapInr })}
           busy={busy}
           warning={warning}
-          onCategory={setVendorCategory}
+          onCategory={(category) => {
+            setVendorCategory(category);
+            setRows([]);
+            setQuestions([]);
+            setWarning(null);
+          }}
           onAskQuestions={async (mustHaves) => {
             setBusy(true);
             try {
@@ -331,12 +353,12 @@ export function PlannerApp() {
               setBusy(false);
             }
           }}
-          onCompare={async (quotes) => {
+          onCompare={async (quotes, mustHaves) => {
             setBusy(true);
             try {
               const payload = quotes.map((quote, index) => ({
                 ...quote,
-                id: `quote-${index + 1}`,
+                id: `${vendorCategory}-quote-${index + 1}`,
                 category: vendorCategory,
                 isEstimated: false,
               }));
@@ -345,7 +367,7 @@ export function PlannerApp() {
                 headcount: plan.guestCount,
                 capInr: vendorCapInr,
                 category: vendorCategory,
-                mustHaves: plan.notes.trim() || `${plan.occasion} in ${plan.city}`,
+                mustHaves: mustHaves.trim() || `${plan.occasion} in ${plan.city}`,
                 occasion: plan.occasion,
                 city: plan.city,
               });
@@ -387,7 +409,7 @@ export function PlannerApp() {
             setBusy(true);
             try {
               const result = await postJson<{ ideas: PersonalizedIdea[]; warning?: string | null }>("/api/plan/ideas", { plan });
-              commitPlan({ ...plan, ideas: result.ideas }, result.warning);
+              commitPlan({ ...plan, ideas: mergeIdeas(plan.ideas ?? [], result.ideas) }, result.warning);
             } catch (reason) {
               setError(reason instanceof Error ? reason.message : "Could not suggest ideas.");
             } finally {

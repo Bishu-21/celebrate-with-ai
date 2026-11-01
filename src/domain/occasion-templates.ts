@@ -46,7 +46,6 @@ export const OCCASION_TEMPLATES: OccasionTemplate[] = [
     summary: "Pick a cake size from the guest count. The price stays an estimate until a baker confirms it.",
     estimatedCostInr: 2_500,
     taskTitle: "Ask a baker for a cake that serves the guest count",
-    maxBudgetInr: 250_000,
   },
   {
     id: "birthday-playlist",

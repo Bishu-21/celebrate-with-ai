@@ -28,7 +28,7 @@ const BudgetRow = memo(function BudgetRow({
       <td className="py-3 pr-3">{formatInr(line.amountInr)}</td>
       <td className="py-3 pr-3">{share}%</td>
       <td className="py-3 pr-3">
-        <Badge tone={line.isEstimated ? "estimate" : "confirmed"}>{line.isEstimated ? "AI estimate" : "Confirmed quote"}</Badge>
+        <Badge tone={line.isEstimated ? "estimate" : "confirmed"}>{line.isEstimated ? line.origin === "local" ? "Local estimate" : "AI estimate" : "Confirmed quote"}</Badge>
       </td>
       <td className="py-3 text-sm text-muted-foreground">{line.assumption}</td>
       <td className="py-3 text-right">

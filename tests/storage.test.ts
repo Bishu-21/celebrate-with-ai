@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildLocalPlan } from "@/domain/local-plan";
 import { clearPlan, getPlanRevision, getStorageIssue, refreshPlanFromStorage, savePlan } from "@/lib/storage";
 import { FIXTURE_BRIEF } from "./brief";
 
 describe("plan storage", () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     window.localStorage.clear();
     clearPlan();
@@ -52,5 +53,35 @@ describe("plan storage", () => {
     if (saved.ok) return;
     expect(saved.reason).toBe("quota");
     expect(window.localStorage.getItem("marigold.plan.v2")).toBeNull();
+  });
+
+  it("does not throw when browser reads are blocked", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    expect(() => refreshPlanFromStorage()).not.toThrow();
+    expect(getStorageIssue()).toMatch(/browser|storage/i);
+  });
+
+  it("validates a plan before overwriting a durable copy", () => {
+    const plan = buildLocalPlan(FIXTURE_BRIEF);
+    savePlan(plan, 0);
+    const before = window.localStorage.getItem("marigold.plan.v2");
+    expect(savePlan({ ...plan, guestCount: -1 }, getPlanRevision()).ok).toBe(false);
+    expect(window.localStorage.getItem("marigold.plan.v2")).toBe(before);
+  });
+
+  it("reset removes the legacy copy so it cannot reappear", () => {
+    window.localStorage.setItem("marigold.plan.v1", JSON.stringify(buildLocalPlan(FIXTURE_BRIEF)));
+    refreshPlanFromStorage();
+    clearPlan();
+    expect(refreshPlanFromStorage()).toBeNull();
+    expect(window.localStorage.getItem("marigold.plan.v1")).toBeNull();
+  });
+
+  it("opens existing multi-category quotations with category-scoped legacy IDs", () => {
+    const plan = buildLocalPlan(FIXTURE_BRIEF);
+    const quote = { id: "quote-1", vendorName: "Vendor", amountInr: 10000, guestCoverage: 120, included: [], notes: "", isEstimated: false };
+    plan.quotes = [{ ...quote, category: "venue" }, { ...quote, category: "catering" }];
+    window.localStorage.setItem("marigold.plan.v2", JSON.stringify({ schemaVersion: 2, revision: 1, plan }));
+    expect(refreshPlanFromStorage()?.quotes).toHaveLength(2);
   });
 });

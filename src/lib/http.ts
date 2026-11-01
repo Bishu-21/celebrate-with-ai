@@ -6,7 +6,11 @@ function sameOrigin(request: Request): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
-    return new URL(origin).host === new URL(request.url).host;
+    const expected = new URL(request.url);
+    // Next's standalone server can use localhost internally even when the browser used 127.0.0.1.
+    const host = request.headers.get("host");
+    if (host) expected.host = host;
+    return new URL(origin).origin === expected.origin;
   } catch {
     return false;
   }
@@ -30,19 +34,33 @@ export async function readBody(request: Request): Promise<{ ok: true; data: unkn
 
   if (!sameOrigin(request)) return { ok: false, response: apiError(403, "cross_origin", "This planner only accepts requests from its own site.", false) };
   const contentType = request.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("application/json")) {
+  if (contentType.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     return { ok: false, response: apiError(415, "unsupported_type", "Request body must be JSON.", false) };
   }
 
-  const text = await request.text();
-  if (Buffer.byteLength(text) > 120_000) {
-    return { ok: false, response: apiError(413, "payload_too_large", "Request is too large.", false) };
-  }
-
+  const reader = request.body?.getReader();
   try {
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let bytes = 0;
+    let text = "";
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > 120_000) {
+          await reader.cancel().catch(() => undefined);
+          return { ok: false, response: apiError(413, "payload_too_large", "Request is too large.", false) };
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+    }
+    text += decoder.decode();
     return { ok: true, data: sanitizeUnknown(JSON.parse(text) as unknown) };
   } catch {
     return { ok: false, response: apiError(400, "invalid_json", "Request body must be JSON.", false) };
+  } finally {
+    reader?.releaseLock();
   }
 }
 

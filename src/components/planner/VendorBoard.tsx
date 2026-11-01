@@ -17,6 +17,8 @@ export function VendorBoard({
   onCategory,
   onAskQuestions,
   onCompare,
+  savedQuotes = [],
+  initialMustHaves = "Step-free access and a clear list of exclusions.",
 }: {
   category: Category;
   capInr: number;
@@ -26,13 +28,15 @@ export function VendorBoard({
   warning?: string | null;
   onCategory: (category: Category) => void;
   onAskQuestions: (mustHaves: string) => void;
-  onCompare: (quotes: Array<Omit<VendorQuote, "id" | "category" | "isEstimated">>) => void;
+  onCompare: (quotes: Array<Omit<VendorQuote, "id" | "category" | "isEstimated">>, mustHaves: string) => void;
+  savedQuotes?: VendorQuote[];
+  initialMustHaves?: string;
 }) {
-  const [mustHaves, setMustHaves] = useState("Step-free access and a clear list of exclusions.");
-  const [quotes, setQuotes] = useState([
-    { vendorName: "", amountInr: 0, guestCoverage: 100, includedText: "", notes: "" },
-    { vendorName: "", amountInr: 0, guestCoverage: 100, includedText: "", notes: "" },
-  ]);
+  const [mustHaves, setMustHaves] = useState(initialMustHaves);
+  const [quotes, setQuotes] = useState(() => Array.from({ length: Math.max(2, savedQuotes.length) }, (_, index) => {
+    const quote = savedQuotes[index];
+    return { vendorName: quote?.vendorName ?? "", amountInr: quote?.amountInr ?? 0, guestCoverage: quote?.guestCoverage ?? 100, includedText: quote?.included.join(", ") ?? "", notes: quote?.notes ?? "" };
+  }));
 
   return (
     <section aria-labelledby="vendor-heading">
@@ -40,7 +44,7 @@ export function VendorBoard({
       <p className="mt-1 text-sm text-muted-foreground">Paste quotations you already have. Marigold does not invent who is free that weekend.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-[16rem_1fr]">
         <Field label="Category">
-          <select className={selectFieldClass()} value={category} onChange={(event) => onCategory(event.target.value as Category)}>
+          <select className={selectFieldClass()} value={category} disabled={busy} onChange={(event) => onCategory(event.target.value as Category)}>
             {CATEGORIES.filter((item) => item !== "miscellaneous").map((item) => (
               <option key={item} value={item}>{CATEGORY_LABELS[item]}</option>
             ))}
@@ -100,6 +104,7 @@ export function VendorBoard({
               included: quote.includedText.split(",").map((item) => item.trim()).filter(Boolean),
               notes: quote.notes,
             })),
+            mustHaves,
           )
         }
       >

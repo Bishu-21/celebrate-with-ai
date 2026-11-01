@@ -38,7 +38,7 @@ function withRemainder(lines: BudgetLine[], budgetInr: number, preferred: Catego
   const drift = budgetInr - sumAmounts(lines);
   if (drift === 0) return lines;
   return lines.map((line) => {
-    if (line.category !== preferred) return line;
+    if (line.category !== preferred || isLocked(line)) return line;
     const next = line.amountInr + drift;
     if (next < 0) return line;
     return { ...line, amountInr: next };
@@ -64,6 +64,7 @@ export function allocateBudget(budgetInr: number, vibe: Vibe, priorities: Catego
     amountInr: Math.round(budgetInr * shares[category]),
     assumption: assumptionFor(category, vibe),
     isEstimated: true,
+    origin: "local",
   }));
 
   return withRemainder(lines, budgetInr, "miscellaneous");
@@ -134,8 +135,9 @@ export function proposeTradeoffs(
   if (excess <= 0) return [];
 
   const top = priorities[0] ?? "catering";
-  const lowestFirst = [...priorities].reverse().filter((category) => category !== top);
-  const protective = lines.map((line) => ({ ...line, isEstimated: true }));
+  const ranked = [...new Set([...priorities, ...CATEGORIES])];
+  const lowestFirst = ranked.reverse().filter((category) => category !== top);
+  const protective = lines.map((line) => ({ ...line }));
   const byCategory = new Map(protective.map((line) => [line.category, line]));
   let remaining = excess;
 
@@ -165,7 +167,7 @@ export function proposeTradeoffs(
   }
 
   const balanced = withRemainder(protective, budgetInr, top);
-  const even = lines.map((line) => ({ ...line, isEstimated: true }));
+  const even = lines.map((line) => ({ ...line }));
   const evenCutBase = excess / Math.max(1, CATEGORIES.length - 1);
   for (const line of even) {
     if (line.category === top || isLocked(line)) continue;
@@ -192,7 +194,16 @@ export function proposeTradeoffs(
       lines: evenBalanced,
       protectedPriority: top,
     },
-  ].filter((scenario) => protectsTopPriority(lines, scenario.lines, top) && sumAmounts(scenario.lines) === budgetInr);
+  ].filter((scenario) => isValidBudgetScenario(lines, scenario.lines, budgetInr, top));
+}
+
+/** Shared guard for local and AI scenarios. Model claims cannot unlock committed costs. */
+export function isValidBudgetScenario(before: BudgetLine[], after: BudgetLine[], budgetInr: number, top: Category): boolean {
+  if (after.length !== CATEGORIES.length || new Set(after.map((line) => line.category)).size !== CATEGORIES.length) return false;
+  if (after.some((line) => !Number.isSafeInteger(line.amountInr) || line.amountInr < 0)) return false;
+  const proposed = new Map(after.map((line) => [line.category, line]));
+  if (before.some((line) => isLocked(line) && proposed.get(line.category)?.amountInr !== line.amountInr)) return false;
+  return sumAmounts(after) === budgetInr && protectsTopPriority(before, after, top);
 }
 
 export function applyConfirmedQuote(

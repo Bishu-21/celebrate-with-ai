@@ -21,9 +21,10 @@ export function sumAmounts(lines: Pick<BudgetLine, "amountInr">[]): number {
 }
 
 export function parseInrAmount(raw: string): number {
-  const digits = raw.replace(/[^\d]/g, "");
-  if (!digits) return 0;
-  return Number(digits);
+  const value = raw.trim().replace(/^(?:₹|INR|Rs\.?)\s*/i, "");
+  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3})$/.test(value)) return Number.NaN;
+  const amount = Number(value.replaceAll(",", ""));
+  return Number.isSafeInteger(amount) ? amount : Number.NaN;
 }
 
 export function isRealIsoDate(isoDate: string): boolean {

@@ -1,6 +1,7 @@
 import { applyConfirmedQuote, overageInr, proposeTradeoffs, scaleCateringForGuests } from "@/domain/budget";
 import { isRealIsoDate } from "@/domain/money";
 import { scheduleTasks } from "@/domain/timeline";
+import { synchronizeVendorCaps } from "@/domain/vendors";
 import type { Category, EventPlan, Guest, PersonalizedIdea, TaskStatus } from "@/domain/types";
 
 export type PlanCommand =
@@ -22,6 +23,11 @@ function reject(plan: EventPlan, error: string): CommandResult {
 }
 
 export function applyPlanCommand(plan: EventPlan, command: PlanCommand): CommandResult {
+  const result = applyCommand(plan, command);
+  return result.ok ? { ...result, plan: synchronizeVendorCaps(result.plan) } : result;
+}
+
+function applyCommand(plan: EventPlan, command: PlanCommand): CommandResult {
   if (command.type === "set-task-status") {
     const task = plan.timelineTasks.find((item) => item.id === command.taskId);
     if (!task) return reject(plan, "That task is not in this plan.");
@@ -84,8 +90,8 @@ export function applyPlanCommand(plan: EventPlan, command: PlanCommand): Command
   }
 
   if (command.type === "confirm-quote") {
-    if (!Number.isInteger(command.amountInr) || command.amountInr < 0) return reject(plan, "Enter the quoted amount in whole rupees.");
-    if (command.vendorName.trim().length < 2) return reject(plan, "Enter the vendor name from the quotation.");
+    if (!Number.isSafeInteger(command.amountInr) || command.amountInr < 0 || command.amountInr > 50_000_000) return reject(plan, "Enter the quoted amount in whole rupees from 0 to ₹5,00,00,000.");
+    if (command.vendorName.trim().length < 2 || command.vendorName.trim().length > 80) return reject(plan, "Enter a vendor name from 2 to 80 characters.");
     const budgetBreakdown = applyConfirmedQuote(plan.budgetBreakdown, command.category, command.amountInr, command.vendorName.trim(), command.quoteId);
     const over = overageInr(budgetBreakdown, plan.budgetInr);
     return {
@@ -152,6 +158,7 @@ export function applyPlanCommand(plan: EventPlan, command: PlanCommand): Command
 
   const idea = (plan.ideas ?? []).find((item) => item.id === command.ideaId);
   if (!idea) return reject(plan, "That idea is not on this plan.");
+  if (idea.status === "added") return { ok: true, plan, warning: null };
   const ideas = (plan.ideas ?? []).map((item) => (item.id === idea.id ? { ...item, status: "added" as const } : item));
   const taskId = `idea-${idea.id}`;
   const hasTask = plan.timelineTasks.some((task) => task.id === taskId);
