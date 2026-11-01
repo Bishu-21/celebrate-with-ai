@@ -15,3 +15,6 @@ npm-debug.log*
 explainer.md
 gen-ai.md
 video-criteria.md
+
+# Local screen recording. Upload this yourself; do not commit it.
+demo/
