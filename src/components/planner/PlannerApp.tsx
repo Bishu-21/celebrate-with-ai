@@ -1,21 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { overageInr } from "@/domain/budget";
-import { applyPlanCommand, type PlanCommand } from "@/domain/commands";
-import { headcount } from "@/domain/guests";
-import { mergeIdeas } from "@/domain/ideas";
 import { formatInr } from "@/domain/money";
-import { validateTaskGraph } from "@/domain/timeline";
-import { compareVendorQuotes, mergeQuotes } from "@/domain/vendors";
-import { CATEGORY_LABELS, type Category, type EventBrief, type EventPlan, type GuestStatus, type PersonalizedIdea, type TaskStatus, type VendorComparisonRow, type VendorQuote } from "@/domain/types";
 import { IntakeWizard } from "@/components/planner/IntakeWizard";
-import { PlannerShell, type SectionId } from "@/components/planner/PlannerShell";
+import { PlannerShell } from "@/components/planner/PlannerShell";
 import { RevisionComposer } from "@/components/planner/RevisionComposer";
+import { usePlannerSession } from "@/components/planner/usePlannerSession";
 import { Button } from "@/components/ui/Button";
-import { assertPlanVersion, capturePlanVersion, postJson, type PlanVersion } from "@/lib/client-api";
-import { clearPlan, emptyPlan, getPlanRevision, getStorageIssue, loadPlan, savePlan, subscribePlan } from "@/lib/storage";
+import { getStorageIssue } from "@/lib/storage";
 
 function SectionFallback() {
   return <p role="status" className="text-sm text-muted-foreground">Loading this section.</p>;
@@ -28,151 +21,31 @@ const IdeasBoard = dynamic(() => import("@/components/planner/IdeasBoard").then(
 const TimelineBoard = dynamic(() => import("@/components/planner/TimelineBoard").then((mod) => mod.TimelineBoard), { loading: SectionFallback });
 const VendorBoard = dynamic(() => import("@/components/planner/VendorBoard").then((mod) => mod.VendorBoard), { loading: SectionFallback });
 
-type ApiPlan = { source: "gemini" | "local"; plan: EventPlan; warning?: string | null; changes?: string[] };
-
-function todayStamp(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
-}
-
 export function PlannerApp() {
-  const storedPlan = useSyncExternalStore(subscribePlan, loadPlan, emptyPlan);
-  const plan = storedPlan;
-  const [section, setSection] = useState<SectionId>("overview");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [changes, setChanges] = useState<string[]>([]);
-  const [warning, setWarning] = useState<string | null>(null);
-  const [vendorCategory, setVendorCategory] = useState<Category>("catering");
-  const [questions, setQuestions] = useState<string[]>([]);
-  const [rows, setRows] = useState<VendorComparisonRow[]>([]);
-  const [preview, setPreview] = useState<(ApiPlan & { version: PlanVersion }) | null>(null);
-  const [undoPlan, setUndoPlan] = useState<{ plan: EventPlan; version: PlanVersion } | null>(null);
-
-  const rsvpHeadcount = useMemo(() => (plan ? headcount(plan.guests) : 0), [plan]);
-  const vendorCapInr = useMemo(
-    () => plan?.budgetBreakdown.find((line) => line.category === vendorCategory)?.amountInr ?? 0,
-    [plan, vendorCategory],
-  );
-  const overviewFacts = useMemo(
-    () =>
-      plan
-        ? [
-            ["Occasion", plan.occasion],
-            ["Date", plan.eventDate],
-            ["Guests", String(plan.guestCount)],
-            ["Budget", formatInr(plan.budgetInr)],
-            ["City", plan.city],
-            ["Vibe", plan.vibe],
-            ["Top priority", CATEGORY_LABELS[plan.priorities[0] ?? "catering"]],
-            ["Confirmed attendance", String(rsvpHeadcount)],
-          ]
-        : [],
-    [plan, rsvpHeadcount],
-  );
-  const timelineWarnings = useMemo(
-    () => (plan ? validateTaskGraph(plan.timelineTasks, plan.eventDate, todayStamp()) : []),
-    [plan],
-  );
-
-  const commitPlan = useCallback((next: EventPlan, notice?: string | null, expectedRevision = getPlanRevision()) => {
-    const saved = savePlan(next, expectedRevision);
-    if (!saved.ok) {
-      setError(saved.message);
-      return false;
-    }
-    setWarning(notice ?? null);
-    setError("");
-    return true;
-  }, []);
-
-  const runCommand = useCallback((command: PlanCommand) => {
-    if (!plan) return;
-    const result = applyPlanCommand(plan, command);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    commitPlan(result.plan, result.warning);
-  }, [plan, commitPlan]);
-
-  const confirmQuote = useCallback((category: Category, vendorName: string, amountInr: number) => {
-    runCommand({ type: "confirm-quote", category, vendorName, amountInr });
-  }, [runCommand]);
-  const applyScenario = useCallback((scenarioId: string) => {
-    runCommand({ type: "apply-scenario", scenarioId });
-  }, [runCommand]);
-  const setTaskStatus = useCallback((id: string, status: TaskStatus) => {
-    runCommand({ type: "set-task-status", taskId: id, status, today: todayStamp() });
-  }, [runCommand]);
-  const setEventDate = useCallback((eventDate: string) => {
-    runCommand({ type: "set-event-date", eventDate, today: todayStamp() });
-  }, [runCommand]);
-  const setGuestStatus = useCallback((id: string, status: GuestStatus) => {
-    if (!plan) return;
-    const guest = plan.guests.find((item) => item.id === id);
-    if (!guest) return;
-    runCommand({ type: "upsert-guest", guest: { ...guest, status } });
-  }, [plan, runCommand]);
-  const applyHeadcount = useCallback((nextCount: number) => {
-    runCommand({ type: "apply-headcount", guestCount: nextCount, today: todayStamp() });
-  }, [runCommand]);
-  const addGuest = useCallback((guest: Omit<EventPlan["guests"][number], "id">) => {
-    if (!plan) return;
-    const id = globalThis.crypto?.randomUUID?.() ?? `guest-${plan.guests.length + 1}`;
-    runCommand({ type: "upsert-guest", guest: { ...guest, id } });
-  }, [plan, runCommand]);
-  const toggleChecklist = useCallback((id: string) => {
-    if (!plan) return;
-    const item = plan.checklist.find((entry) => entry.id === id);
-    if (!item) return;
-    runCommand({ type: "set-checklist", itemId: id, done: !item.done });
-  }, [plan, runCommand]);
-  const setIdeaStatus = useCallback((ideaId: string, status: PersonalizedIdea["status"]) => {
-    runCommand({ type: "set-idea-status", ideaId, status });
-  }, [runCommand]);
-  const addIdea = useCallback((ideaId: string) => {
-    runCommand({ type: "add-idea", ideaId, today: todayStamp() });
-  }, [runCommand]);
-
-  const createPlan = async (brief: EventBrief) => {
-    setBusy(true);
-    setError("");
-    try {
-      const result = await postJson<ApiPlan>("/api/plan/generate", { brief });
-      commitPlan(result.plan, result.warning);
-      setSection("overview");
-      setChanges([]);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not generate a plan.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const session = usePlannerSession();
+  const { plan } = session;
 
   if (!plan) {
     return (
       <main id="planner-main" className="flex min-h-dvh items-center px-4 py-16">
         <div className="mx-auto w-full max-w-2xl">
           {getStorageIssue() ? <p role="alert" className="mb-4 text-sm font-medium text-danger">{getStorageIssue()}</p> : null}
-          <IntakeWizard busy={busy} error={error} onCreate={createPlan} />
+          <IntakeWizard busy={session.busy} error={session.error} onCreate={session.createPlan} />
         </div>
       </main>
     );
   }
 
   return (
-    <PlannerShell title={plan.title} source={plan.source} section={section} onSection={setSection}>
-      {section === "overview" ? (
+    <PlannerShell title={plan.title} source={plan.source} section={session.section} onSection={session.setSection}>
+      {session.section === "overview" ? (
         <section aria-labelledby="overview-heading" className="space-y-4">
           <div>
             <h1 id="overview-heading" className="font-serif text-5xl leading-tight">{plan.title}</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{plan.rationale}</p>
           </div>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {overviewFacts.map(([label, value]) => (
+            {session.overviewFacts.map(([label, value]) => (
               <div key={label} className="glass rounded-[28px] px-5 py-4">
                 <dt className="text-xs font-semibold uppercase tracking-[0.22em] text-gold">{label}</dt>
                 <dd className="mt-2 font-serif text-2xl capitalize">{value}</dd>
@@ -185,242 +58,96 @@ export function PlannerApp() {
             </p>
           ) : null}
           <RevisionComposer
-            busy={busy}
-            changes={changes}
-            warning={warning}
-            onRevise={async (instruction) => {
-              setBusy(true);
-              setError("");
-              const baseRevision = getPlanRevision();
-              try {
-                const result = await postJson<ApiPlan>("/api/plan/revise", { plan, instruction, today: todayStamp(), baseRevision });
-                if (getPlanRevision() !== baseRevision) {
-                  setError("A newer copy of this plan was saved. The preview was discarded.");
-                  return;
-                }
-                setPreview({ ...result, version: capturePlanVersion() });
-                setChanges(result.changes ?? []);
-                setWarning(result.warning ?? null);
-              } catch (reason) {
-                setError(reason instanceof Error ? reason.message : "Could not revise the plan.");
-              } finally {
-                setBusy(false);
-              }
-            }}
+            busy={session.busy}
+            changes={session.changes}
+            warning={session.warning}
+            onRevise={session.revise}
           />
-          {preview ? (
+          {session.preview ? (
             <div className="glass rounded-[28px] p-5">
               <h2 className="font-serif text-3xl">Preview</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                {preview.plan.guestCount} guests, {formatInr(preview.plan.budgetInr)}, {preview.plan.eventDate}. Source {preview.source}.
+                {session.preview.plan.guestCount} guests, {formatInr(session.preview.plan.budgetInr)}, {session.preview.plan.eventDate}. Source {session.preview.source}.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button
-                  onClick={() => {
-                    try {
-                      assertPlanVersion(preview.version);
-                      if (commitPlan(preview.plan, preview.warning, preview.version.revision)) {
-                        setUndoPlan({ plan, version: capturePlanVersion() });
-                        setPreview(null);
-                      }
-                    } catch (reason) {
-                      setError(reason instanceof Error ? reason.message : "The plan changed. Generate another preview.");
-                      setPreview(null);
-                    }
-                  }}
-                >
-                  Accept revision
-                </Button>
-                <Button variant="secondary" onClick={() => setPreview(null)}>Discard preview</Button>
+                <Button onClick={session.acceptPreview}>Accept revision</Button>
+                <Button variant="secondary" onClick={session.discardPreview}>Discard preview</Button>
               </div>
             </div>
           ) : null}
-          {undoPlan ? (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                try {
-                  assertPlanVersion(undoPlan.version);
-                  if (commitPlan(undoPlan.plan, "Restored the plan from before the last accepted revision.", undoPlan.version.revision)) {
-                    setUndoPlan(null);
-                    setChanges([]);
-                  }
-                } catch (reason) {
-                  setError(reason instanceof Error ? reason.message : "The plan changed since that revision.");
-                  setUndoPlan(null);
-                }
-              }}
-            >
-              Undo last revision
-            </Button>
+          {session.undoPlan ? (
+            <Button variant="ghost" onClick={session.undoRevision}>Undo last revision</Button>
           ) : null}
-          {error ? <p role="alert" className="text-sm font-medium text-danger">{error}</p> : null}
-          <Button
-            variant="ghost"
-            onClick={() => {
-              const cleared = clearPlan();
-              if (!cleared.ok) {
-                setError(cleared.message);
-                return;
-              }
-              setChanges([]);
-              setPreview(null);
-              setUndoPlan(null);
-              setQuestions([]);
-              setRows([]);
-              setWarning(null);
-            }}
-          >
-            Start over
-          </Button>
+          {session.error ? <p role="alert" className="text-sm font-medium text-danger">{session.error}</p> : null}
+          <Button variant="ghost" onClick={session.startOver}>Start over</Button>
         </section>
       ) : null}
 
-      {section === "budget" ? (
+      {session.section === "budget" ? (
         <BudgetBoard
           plan={plan}
-          busy={busy}
-          onConfirm={confirmQuote}
-          onApplyScenario={applyScenario}
-          onAskGemini={async () => {
-            setBusy(true);
-            try {
-              const result = await postJson<ApiPlan>("/api/plan/tradeoffs", { plan });
-              commitPlan(result.plan, result.warning);
-            } catch (reason) {
-              setError(reason instanceof Error ? reason.message : "Could not fetch trade-offs.");
-            } finally {
-              setBusy(false);
-            }
-          }}
+          busy={session.busy}
+          onConfirm={session.confirmQuote}
+          onApplyScenario={session.applyScenario}
+          onAskGemini={session.askTradeoffs}
         />
       ) : null}
 
-      {section === "timeline" ? (
+      {session.section === "timeline" ? (
         <TimelineBoard
           plan={plan}
-          busy={busy}
-          warnings={timelineWarnings}
-          onStatus={setTaskStatus}
-          onDateChange={setEventDate}
-          onReschedule={async () => {
-            setBusy(true);
-            try {
-              const result = await postJson<ApiPlan>("/api/plan/timeline", { plan, eventDate: plan.eventDate, today: todayStamp() });
-              commitPlan(result.plan, result.warning);
-            } catch (reason) {
-              setError(reason instanceof Error ? reason.message : "Could not reschedule.");
-            } finally {
-              setBusy(false);
-            }
-          }}
+          busy={session.busy}
+          warnings={session.timelineWarnings}
+          onStatus={session.setTaskStatus}
+          onDateChange={session.setEventDate}
+          onReschedule={session.reschedule}
         />
       ) : null}
 
-      {section === "vendors" ? (
+      {session.section === "vendors" ? (
         <VendorBoard
-          key={`${plan.id}-${vendorCategory}`}
-          category={vendorCategory}
-          capInr={vendorCapInr}
-          savedQuotes={plan.quotes.filter((quote) => quote.category === vendorCategory)}
-          initialMustHaves={plan.vendorBriefs.find((brief) => brief.category === vendorCategory)?.mustHaves || plan.notes}
-          questions={questions.length ? questions : plan.vendorBriefs.find((brief) => brief.category === vendorCategory)?.questions ?? []}
-          rows={rows.length ? rows : compareVendorQuotes(plan.quotes.filter((quote) => quote.category === vendorCategory), plan.guestCount, { [vendorCategory]: vendorCapInr })}
-          busy={busy}
-          warning={warning}
-          onCategory={(category) => {
-            setVendorCategory(category);
-            setRows([]);
-            setQuestions([]);
-            setWarning(null);
-          }}
-          onAskQuestions={async (mustHaves) => {
-            setBusy(true);
-            try {
-              const result = await postJson<{ questions: string[]; warning?: string | null }>("/api/vendors/questions", {
-                category: vendorCategory,
-                mustHaves,
-                guestCoverage: plan.guestCount,
-                budgetCapInr: vendorCapInr,
-                occasion: plan.occasion,
-                city: plan.city,
-              });
-              setQuestions(result.questions);
-              setWarning(result.warning ?? null);
-            } catch (reason) {
-              setError(reason instanceof Error ? reason.message : "Could not draft questions.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-          onCompare={async (quotes, mustHaves) => {
-            setBusy(true);
-            try {
-              const payload = quotes.map((quote, index) => ({
-                ...quote,
-                id: `${vendorCategory}-quote-${index + 1}`,
-                category: vendorCategory,
-                isEstimated: false,
-              }));
-              const result = await postJson<{ vendorComparisonMatrix: VendorComparisonRow[]; questions?: string[]; warning?: string | null }>("/api/vendors/compare", {
-                quotes: payload,
-                headcount: plan.guestCount,
-                capInr: vendorCapInr,
-                category: vendorCategory,
-                mustHaves: mustHaves.trim() || `${plan.occasion} in ${plan.city}`,
-                occasion: plan.occasion,
-                city: plan.city,
-              });
-              setRows(result.vendorComparisonMatrix);
-              if (result.questions?.length) setQuestions(result.questions);
-              setWarning(result.warning ?? null);
-              commitPlan({ ...plan, quotes: mergeQuotes(plan.quotes, payload as VendorQuote[]) }, result.warning);
-            } catch (reason) {
-              setError(reason instanceof Error ? reason.message : "Could not compare quotes.");
-            } finally {
-              setBusy(false);
-            }
-          }}
+          key={`${plan.id}-${session.vendorCategory}`}
+          category={session.vendorCategory}
+          capInr={session.vendorCapInr}
+          savedQuotes={session.savedQuotes}
+          initialMustHaves={session.vendorBrief?.mustHaves || plan.notes}
+          questions={session.shownQuestions}
+          rows={session.shownRows}
+          busy={session.busy}
+          warning={session.warning}
+          onCategory={session.changeVendorCategory}
+          onAskQuestions={session.askQuestions}
+          onCompare={session.compareQuotes}
         />
       ) : null}
 
-      {section === "guests" ? (
+      {session.section === "guests" ? (
         <GuestBoard
           guests={plan.guests}
-          onStatus={setGuestStatus}
-          onApplyHeadcount={applyHeadcount}
-          onAdd={addGuest}
+          onStatus={session.setGuestStatus}
+          onApplyHeadcount={session.applyHeadcount}
+          onAdd={session.addGuest}
         />
       ) : null}
 
-      {section === "checklist" ? (
+      {session.section === "checklist" ? (
         <ChecklistBoard
           items={plan.checklist}
-          onToggle={toggleChecklist}
+          onToggle={session.toggleChecklist}
         />
       ) : null}
 
-      {section === "ideas" ? (
+      {session.section === "ideas" ? (
         <IdeasBoard
           ideas={plan.ideas ?? []}
-          busy={busy}
-          warning={warning}
-          onSuggest={async () => {
-            setBusy(true);
-            try {
-              const result = await postJson<{ ideas: PersonalizedIdea[]; warning?: string | null }>("/api/plan/ideas", { plan });
-              commitPlan({ ...plan, ideas: mergeIdeas(plan.ideas ?? [], result.ideas) }, result.warning);
-            } catch (reason) {
-              setError(reason instanceof Error ? reason.message : "Could not suggest ideas.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-          onStatus={setIdeaStatus}
-          onAdd={addIdea}
+          busy={session.busy}
+          warning={session.warning}
+          onSuggest={session.suggestIdeas}
+          onStatus={session.setIdeaStatus}
+          onAdd={session.addIdea}
         />
       ) : null}
-      {section !== "overview" && error ? <p role="alert" className="mt-4 text-sm font-medium text-danger">{error}</p> : null}
+      {session.section !== "overview" && session.error ? <p role="alert" className="mt-4 text-sm font-medium text-danger">{session.error}</p> : null}
     </PlannerShell>
   );
 }

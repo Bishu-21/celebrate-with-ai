@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INITIAL_PLAN_RESPONSE_SCHEMA } from "@/lib/gemini";
+import { INITIAL_PLAN_RESPONSE_SCHEMA } from "@/lib/gemini-schema";
 import { geminiPlanDraftSchema } from "@/lib/schemas";
 
 describe("gemini response schema", () => {

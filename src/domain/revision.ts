@@ -27,17 +27,34 @@ function dateInMonth(eventDate: string, monthName: string): string | undefined {
   return `${year}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
 }
 
+const GUEST_MORE = /(\d+)\s+more\s+(?:guests|people|persons|folks)/i;
+const GUEST_INVITING = /inviting\s+(\d+)\s+more/i;
+const GUEST_ADD = /add\s+(\d+)\s+(?:guests|people|persons)/i;
+const GUEST_FEWER = /(\d+)\s+fewer\s+(?:guests|people|persons)/i;
+const GUEST_REMOVE = /remove\s+(\d+)\s+(?:guests|people)/i;
+const GUEST_ABSOLUTE = /(?:guests?|headcount|people)\s+(?:is|are)\s+now\s+(\d+)/i;
+const BUDGET_PERCENT_DOWN = /budget\s+(?:dropped|reduced|cut|down)\s+by\s+(\d+(?:\.\d+)?)\s*%/i;
+const BUDGET_PERCENT_UP = /budget\s+(?:increased|raised|up)\s+by\s+(\d+(?:\.\d+)?)\s*%/i;
+const BUDGET_MONEY = /budget\s+(dropped|reduced|cut|down|increased|raised|up)\s+by\s+[^0-9]*([0-9][0-9,]*(?:\.\d+)?)(?:\s*(lakh|lac|crore))?/i;
+const BUDGET_ABSOLUTE = /budget\s+(?:is\s+now|(?:has\s+been\s+|is\s+)?(?:increased|raised|dropped|reduced|cut|changed)\s+to)\s+[^0-9]*([0-9][0-9,]*(?:\.\d+)?)\s*(lakhs?|lacs?|crores?)?/i;
+const WEEKS_EARLIER = /(\d+)\s+weeks?\s+earlier/i;
+const DAYS_EARLIER = /(\d+)\s+days?\s+earlier/i;
+const WEEKS_LATER = /(\d+)\s+weeks?\s+later/i;
+const DAYS_LATER = /(\d+)\s+days?\s+later/i;
+const DATED = /(?:event|date|party)\s+(?:is|on|moves to)\s+(\d{4}-\d{2}-\d{2})/i;
+const MONTH_NAMED = /(?:move|moving|reschedule|shift|party|event|date)\s+(?:the\s+)?(?:party|event|date)?\s*(?:to|in)\s+(january|february|march|april|may|june|july|august|september|october|november|december)/i;
+
 export function parseConstraintChange(text: string, currentBudgetInr: number, eventDate = ""): ConstraintDelta {
-  const guestMore = /(\d+)\s+more\s+(?:guests|people|persons|folks)/i.exec(text) ?? /inviting\s+(\d+)\s+more/i.exec(text);
-  const guestAdd = /add\s+(\d+)\s+(?:guests|people|persons)/i.exec(text);
-  const guestFewer = /(\d+)\s+fewer\s+(?:guests|people|persons)/i.exec(text) ?? /remove\s+(\d+)\s+(?:guests|people)/i.exec(text);
-  const guestAbsolute = /(?:guests?|headcount|people)\s+(?:is|are)\s+now\s+(\d+)/i.exec(text);
+  const guestMore = GUEST_MORE.exec(text) ?? GUEST_INVITING.exec(text);
+  const guestAdd = GUEST_ADD.exec(text);
+  const guestFewer = GUEST_FEWER.exec(text) ?? GUEST_REMOVE.exec(text);
+  const guestAbsolute = GUEST_ABSOLUTE.exec(text);
   const guestDelta = guestMore ? Number(guestMore[1]) : guestAdd ? Number(guestAdd[1]) : guestFewer ? -Number(guestFewer[1]) : 0;
 
-  const percent = /budget\s+(?:dropped|reduced|cut|down)\s+by\s+(\d+(?:\.\d+)?)\s*%/i.exec(text);
-  const raisedPercent = /budget\s+(?:increased|raised|up)\s+by\s+(\d+(?:\.\d+)?)\s*%/i.exec(text);
-  const money = /budget\s+(dropped|reduced|cut|down|increased|raised|up)\s+by\s+[^0-9]*([0-9][0-9,]*(?:\.\d+)?)(?:\s*(lakh|lac|crore))?/i.exec(text);
-  const absoluteMoney = /budget\s+(?:is\s+now|(?:has\s+been\s+|is\s+)?(?:increased|raised|dropped|reduced|cut|changed)\s+to)\s+[^0-9]*([0-9][0-9,]*(?:\.\d+)?)\s*(lakhs?|lacs?|crores?)?/i.exec(text);
+  const percent = BUDGET_PERCENT_DOWN.exec(text);
+  const raisedPercent = BUDGET_PERCENT_UP.exec(text);
+  const money = BUDGET_MONEY.exec(text);
+  const absoluteMoney = BUDGET_ABSOLUTE.exec(text);
 
   let budgetDeltaInr = 0;
   let sawBudgetDelta = false;
@@ -56,12 +73,12 @@ export function parseConstraintChange(text: string, currentBudgetInr: number, ev
 
   const absoluteBudgetInr = absoluteMoney ? inrFromWords(Number(absoluteMoney[1].replace(/[^\d.]/g, "")), absoluteMoney[2]) : undefined;
 
-  const weeksEarlier = /(\d+)\s+weeks?\s+earlier/i.exec(text);
-  const daysEarlier = /(\d+)\s+days?\s+earlier/i.exec(text);
-  const weeksLater = /(\d+)\s+weeks?\s+later/i.exec(text);
-  const daysLater = /(\d+)\s+days?\s+later/i.exec(text);
-  const dated = /(?:event|date|party)\s+(?:is|on|moves to)\s+(\d{4}-\d{2}-\d{2})/i.exec(text);
-  const monthNamed = /(?:move|moving|reschedule|shift|party|event|date)\s+(?:the\s+)?(?:party|event|date)?\s*(?:to|in)\s+(january|february|march|april|may|june|july|august|september|october|november|december)/i.exec(text);
+  const weeksEarlier = WEEKS_EARLIER.exec(text);
+  const daysEarlier = DAYS_EARLIER.exec(text);
+  const weeksLater = WEEKS_LATER.exec(text);
+  const daysLater = DAYS_LATER.exec(text);
+  const dated = DATED.exec(text);
+  const monthNamed = MONTH_NAMED.exec(text);
   const monthDate = monthNamed ? dateInMonth(eventDate, monthNamed[1]) : undefined;
   const sawShift = Boolean(weeksEarlier || daysEarlier || weeksLater || daysLater || monthDate);
   const dayShift = weeksEarlier

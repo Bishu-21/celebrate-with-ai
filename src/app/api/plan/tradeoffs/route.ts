@@ -3,7 +3,7 @@ import { proposeTradeoffs } from "@/domain/budget";
 import { applyTradeoffDraft } from "@/domain/merge-draft";
 import type { EventPlan } from "@/domain/types";
 import { recalculateBudgetTradeoffs } from "@/lib/gemini";
-import { invalid, readBody } from "@/lib/http";
+import { readJson } from "@/lib/http";
 import { tradeoffRequestSchema } from "@/lib/schemas";
 
 function localTradeoffs(plan: EventPlan) {
@@ -19,11 +19,8 @@ function localTradeoffs(plan: EventPlan) {
 }
 
 export async function POST(request: Request) {
-  const body = await readBody(request);
-  if (!body.ok) return body.response;
-
-  const parsed = tradeoffRequestSchema.safeParse(body.data);
-  if (!parsed.success) return invalid("The plan needs a valid budget before trade-offs can be calculated.");
+  const parsed = await readJson(request, tradeoffRequestSchema, "The plan needs a valid budget before trade-offs can be calculated.");
+  if (!parsed.ok) return parsed.response;
 
   try {
     const draft = await recalculateBudgetTradeoffs(parsed.data.plan);

@@ -153,6 +153,10 @@ export const tradeoffRequestSchema = z.object({
   plan: eventPlanSchema,
 });
 
+export const ideasRequestSchema = z.object({
+  plan: eventPlanSchema,
+});
+
 export const timelineRequestSchema = z.object({
   plan: eventPlanSchema,
   eventDate: realDate,

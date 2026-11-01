@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { ZodType } from "zod";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { sanitizeUnknown } from "@/lib/sanitize";
 
@@ -62,6 +63,19 @@ export async function readBody(request: Request): Promise<{ ok: true; data: unkn
   } finally {
     reader?.releaseLock();
   }
+}
+
+/** Reads a JSON body and validates it. Callers return `response` when `ok` is false. */
+export async function readJson<T>(
+  request: Request,
+  schema: ZodType<T>,
+  message: string,
+): Promise<{ ok: true; data: T } | { ok: false; response: NextResponse }> {
+  const body = await readBody(request);
+  if (!body.ok) return body;
+  const parsed = schema.safeParse(body.data);
+  if (!parsed.success) return { ok: false, response: invalid(message) };
+  return { ok: true, data: parsed.data };
 }
 
 export function apiError(status: number, code: string, message: string, retryable: boolean, headers?: Record<string, string>): NextResponse {

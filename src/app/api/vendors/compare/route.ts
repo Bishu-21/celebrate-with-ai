@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
+import { indexFirst } from "@/domain/index-first";
 import { compareVendorQuotes as scoreQuotes, localVendorQuestions } from "@/domain/vendors";
 import { compareVendorQuotes } from "@/lib/gemini";
-import { invalid, readBody } from "@/lib/http";
+import { readJson } from "@/lib/http";
 import { vendorCompareRequestSchema } from "@/lib/schemas";
 
 export async function POST(request: Request) {
-  const body = await readBody(request);
-  if (!body.ok) return body.response;
-
-  const parsed = vendorCompareRequestSchema.safeParse(body.data);
-  if (!parsed.success) return invalid("Add at least two quotations with amounts and guest coverage.");
+  const parsed = await readJson(request, vendorCompareRequestSchema, "Add at least two quotations with amounts and guest coverage.");
+  if (!parsed.ok) return parsed.response;
 
   const matrix = scoreQuotes(parsed.data.quotes, parsed.data.headcount, {
     [parsed.data.category]: parsed.data.capInr,
@@ -31,9 +29,10 @@ export async function POST(request: Request) {
         notes: quote.notes,
       })),
     });
+    const byQuoteId = indexFirst(draft.vendorComparisonMatrix, (item) => item.quoteId);
+    const byVendorName = indexFirst(draft.vendorComparisonMatrix, (item) => item.vendorName);
     const commentary = matrix.map((row) => {
-      const match = draft.vendorComparisonMatrix.find((item) => item.quoteId === row.quoteId)
-        ?? draft.vendorComparisonMatrix.find((item) => item.vendorName === row.vendorName);
+      const match = byQuoteId.get(row.quoteId) ?? byVendorName.get(row.vendorName);
       return match
         ? {
             ...row,

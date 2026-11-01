@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { GoogleGenAI, ThinkingLevel, Type, type Schema } from "@google/genai";
-import { CATEGORIES, type Category, type ConstraintDelta, type EventBrief, type EventPlan } from "@/domain/types";
+import { GoogleGenAI, ThinkingLevel, type Schema } from "@google/genai";
+import { type Category, type ConstraintDelta, type EventBrief, type EventPlan } from "@/domain/types";
 import { buildAiContext } from "@/lib/ai-context";
 import {
   normalizeConstraintDelta,
@@ -23,145 +23,20 @@ import {
   type GeminiTradeoffDraft,
   type GeminiVendorDraft,
 } from "@/lib/schemas";
+import {
+  CATEGORY_LIST,
+  CONSTRAINT_DELTA_RESPONSE_SCHEMA,
+  ESTIMATE_RULE,
+  IDEAS_RESPONSE_SCHEMA,
+  INITIAL_PLAN_RESPONSE_SCHEMA,
+  TIMELINE_RESPONSE_SCHEMA,
+  TRADEOFF_RESPONSE_SCHEMA,
+  VENDOR_RESPONSE_SCHEMA,
+} from "@/lib/gemini-schema";
+
+export { INITIAL_PLAN_RESPONSE_SCHEMA } from "@/lib/gemini-schema";
 
 const MODEL_DEFAULT = "gemini-3.5-flash-lite";
-const CATEGORY_ENUM = [...CATEGORIES];
-const CATEGORY_LIST = CATEGORY_ENUM.join(", ");
-const PRIORITY_ENUM = ["high", "medium", "low"];
-
-function moneyLineSchema(): Schema {
-  return {
-    type: Type.OBJECT,
-    required: ["category", "amountInr", "assumption", "isEstimated"],
-    properties: {
-      category: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
-      amountInr: { type: Type.INTEGER },
-      assumption: { type: Type.STRING },
-      isEstimated: { type: Type.BOOLEAN },
-    },
-  };
-}
-
-export const INITIAL_PLAN_RESPONSE_SCHEMA: Schema = {
-  type: Type.OBJECT,
-  required: ["rationale", "budgetBreakdown", "timelineTasks", "tradeOffScenarios", "vendorBriefs", "checklist"],
-  properties: {
-    rationale: { type: Type.STRING },
-    budgetBreakdown: { type: Type.ARRAY, items: moneyLineSchema() },
-    timelineTasks: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["id", "title", "ownerHint", "durationDays", "dependencies", "priority", "note"],
-        properties: {
-          id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          ownerHint: { type: Type.STRING },
-          durationDays: { type: Type.INTEGER },
-          dependencies: { type: Type.ARRAY, items: { type: Type.STRING } },
-          priority: { type: Type.STRING, enum: [...PRIORITY_ENUM] },
-          note: { type: Type.STRING },
-        },
-      },
-    },
-    tradeOffScenarios: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["id", "title", "summary", "protectedPriority", "lines"],
-        properties: {
-          id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          summary: { type: Type.STRING },
-          protectedPriority: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
-          lines: { type: Type.ARRAY, items: moneyLineSchema() },
-        },
-      },
-    },
-    vendorBriefs: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["category", "mustHaves", "questions"],
-        properties: {
-          category: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
-          mustHaves: { type: Type.STRING },
-          questions: { type: Type.ARRAY, items: { type: Type.STRING } },
-        },
-      },
-    },
-    checklist: { type: Type.ARRAY, items: { type: Type.STRING } },
-  },
-};
-
-const TRADEOFF_RESPONSE_SCHEMA: Schema = {
-  type: Type.OBJECT,
-  required: ["summary", "scenarios"],
-  properties: {
-    summary: { type: Type.STRING },
-    scenarios: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["id", "title", "summary", "protectedPriority", "lines"],
-        properties: {
-          id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          summary: { type: Type.STRING },
-          protectedPriority: { type: Type.STRING, enum: [...CATEGORY_ENUM] },
-          lines: { type: Type.ARRAY, items: moneyLineSchema() },
-        },
-      },
-    },
-  },
-};
-
-const VENDOR_RESPONSE_SCHEMA: Schema = {
-  type: Type.OBJECT,
-  required: ["questions", "vendorComparisonMatrix"],
-  properties: {
-    questions: { type: Type.ARRAY, items: { type: Type.STRING } },
-    vendorComparisonMatrix: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["vendorName", "fitSummary", "hiddenChargeNotes", "isEstimated"],
-        properties: {
-          quoteId: { type: Type.STRING },
-          vendorName: { type: Type.STRING },
-          fitSummary: { type: Type.STRING },
-          hiddenChargeNotes: { type: Type.ARRAY, items: { type: Type.STRING } },
-          isEstimated: { type: Type.BOOLEAN },
-        },
-      },
-    },
-  },
-};
-
-const TIMELINE_RESPONSE_SCHEMA: Schema = {
-  type: Type.OBJECT,
-  required: ["timelineTasks"],
-  properties: {
-    timelineTasks: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["id", "title", "note", "priority", "dependencies", "durationDays"],
-        properties: {
-          id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          note: { type: Type.STRING },
-          priority: { type: Type.STRING, enum: [...PRIORITY_ENUM] },
-          dependencies: { type: Type.ARRAY, items: { type: Type.STRING } },
-          durationDays: { type: Type.INTEGER },
-        },
-      },
-    },
-  },
-};
-
-const ESTIMATE_RULE =
-  "Every cost is an assumption. Set isEstimated to true. Never present a number as a confirmed vendor price or as live availability.";
 
 let cachedClient: { apiKey: string; client: GoogleGenAI } | null = null;
 
@@ -216,9 +91,30 @@ async function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>, millis
 }
 
 const inFlight = new Map<string, Promise<unknown>>();
+const schemaDigest = new WeakMap<object, string>();
+
+function digestSchema(responseSchema: Schema): string {
+  const cached = schemaDigest.get(responseSchema);
+  if (cached) return cached;
+  const digest = createHash("sha256").update(JSON.stringify(responseSchema)).digest("hex");
+  schemaDigest.set(responseSchema, digest);
+  return digest;
+}
 
 function generateJson(systemInstruction: string, prompt: string, responseSchema: Schema, maxOutputTokens = 4096): Promise<unknown> {
-  const key = createHash("sha256").update(JSON.stringify([process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL, systemInstruction, prompt, responseSchema, maxOutputTokens])).digest("hex");
+  const key = createHash("sha256")
+    .update(process.env.GEMINI_API_KEY ?? "")
+    .update("\0")
+    .update(process.env.GEMINI_MODEL ?? "")
+    .update("\0")
+    .update(systemInstruction)
+    .update("\0")
+    .update(prompt)
+    .update("\0")
+    .update(digestSchema(responseSchema))
+    .update("\0")
+    .update(String(maxOutputTokens))
+    .digest("hex");
   const pending = inFlight.get(key);
   if (pending) return pending;
   if (inFlight.size >= 8) return Promise.reject(new Error("Gemini is busy. Wait a moment and try again."));
@@ -349,6 +245,7 @@ export async function rescheduleTimelineWithDependencies(plan: EventPlan, eventD
   return result.data;
 }
 
+/** Asks Gemini only for the notes a settled revision still needs. Numbers stay in the domain layer. */
 export async function reviseEventPlan(
   plan: EventPlan,
   instruction: string,
@@ -384,19 +281,7 @@ export async function extractConstraintDelta(plan: EventPlan, instruction: strin
       guestCount: plan.guestCount,
       budgetInr: plan.budgetInr,
     }),
-    {
-      type: Type.OBJECT,
-      required: ["guestDelta", "budgetDeltaInr", "dayShift"],
-      properties: {
-        guestDelta: { type: Type.INTEGER },
-        absoluteGuestCount: { type: Type.INTEGER, nullable: true },
-        budgetDeltaInr: { type: Type.INTEGER },
-        absoluteBudgetInr: { type: Type.INTEGER, nullable: true },
-        dayShift: { type: Type.INTEGER },
-        absoluteEventDate: { type: Type.STRING, nullable: true },
-        ambiguous: { type: Type.STRING, nullable: true },
-      },
-    },
+    CONSTRAINT_DELTA_RESPONSE_SCHEMA,
   );
   const result = constraintDeltaSchema.safeParse(normalizeConstraintDelta(parsed));
   if (!result.success) throw new Error("Gemini returned a revision that did not match the schema.");
@@ -422,26 +307,7 @@ export async function generateIdeas(plan: EventPlan): Promise<Array<{ id: string
       "Use only the aggregates. Do not ask for guest names.",
     ].join(" "),
     JSON.stringify(buildAiContext(plan)),
-    {
-      type: Type.OBJECT,
-      required: ["ideas"],
-      properties: {
-        ideas: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            required: ["id", "title", "summary", "estimatedCostInr", "taskTitle"],
-            properties: {
-              id: { type: Type.STRING },
-              title: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              estimatedCostInr: { type: Type.INTEGER },
-              taskTitle: { type: Type.STRING },
-            },
-          },
-        },
-      },
-    },
+    IDEAS_RESPONSE_SCHEMA,
   );
   const result = geminiIdeasSchema.safeParse(normalizeIdeasDraft(parsed));
   if (!result.success) throw new Error(`Gemini returned ideas that did not match the schema. ${schemaDetail(result.error.issues)}`);

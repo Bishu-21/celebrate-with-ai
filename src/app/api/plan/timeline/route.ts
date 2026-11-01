@@ -3,15 +3,12 @@ import { applyTimelineDraft } from "@/domain/merge-draft";
 import { isRealIsoDate } from "@/domain/money";
 import { scheduleTasks, validateTaskGraph } from "@/domain/timeline";
 import { rescheduleTimelineWithDependencies } from "@/lib/gemini";
-import { invalid, readBody } from "@/lib/http";
+import { readJson } from "@/lib/http";
 import { timelineRequestSchema } from "@/lib/schemas";
 
 export async function POST(request: Request) {
-  const body = await readBody(request);
-  if (!body.ok) return body.response;
-
-  const parsed = timelineRequestSchema.safeParse(body.data);
-  if (!parsed.success) return invalid("Choose a valid event date.");
+  const parsed = await readJson(request, timelineRequestSchema, "Choose a valid event date.");
+  if (!parsed.ok) return parsed.response;
 
   const today = parsed.data.today && isRealIsoDate(parsed.data.today) ? parsed.data.today : new Date().toISOString().slice(0, 10);
   const graphWarnings = validateTaskGraph(parsed.data.plan.timelineTasks, parsed.data.eventDate, today);

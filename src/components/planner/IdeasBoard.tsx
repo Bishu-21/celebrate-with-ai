@@ -1,11 +1,12 @@
 "use client";
 
+import { memo } from "react";
 import { formatInr } from "@/domain/money";
 import type { PersonalizedIdea } from "@/domain/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 
-export function IdeasBoard({
+export const IdeasBoard = memo(function IdeasBoard({
   ideas,
   busy,
   warning,
@@ -62,4 +63,4 @@ export function IdeasBoard({
       {!ideas.length ? <p className="mt-4 text-sm text-muted-foreground">No ideas yet. Ask for suggestions for this occasion.</p> : null}
     </section>
   );
-}
+});

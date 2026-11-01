@@ -1,24 +1,22 @@
 import { NextResponse } from "next/server";
 import { localIdeas } from "@/domain/ideas";
 import { generateIdeas } from "@/lib/gemini";
-import { invalid, readBody } from "@/lib/http";
-import { eventPlanSchema } from "@/lib/schemas";
+import { readJson } from "@/lib/http";
+import { ideasRequestSchema } from "@/lib/schemas";
 
 export async function POST(request: Request) {
-  const body = await readBody(request);
-  if (!body.ok) return body.response;
+  const parsed = await readJson(request, ideasRequestSchema, "Ideas need a valid plan.");
+  if (!parsed.ok) return parsed.response;
 
-  const parsed = eventPlanSchema.safeParse(body.data && typeof body.data === "object" && "plan" in body.data ? (body.data as { plan: unknown }).plan : null);
-  if (!parsed.success) return invalid("Ideas need a valid plan.");
-
-  const fallback = localIdeas(parsed.data);
+  const plan = parsed.data.plan;
+  const fallback = localIdeas(plan);
   try {
-    const drafted = await generateIdeas(parsed.data);
+    const drafted = await generateIdeas(plan);
     const ideas = drafted.map((idea) => ({
       id: idea.id,
       title: idea.title,
       summary: idea.summary,
-      occasion: parsed.data.occasion,
+      occasion: plan.occasion,
       estimatedCostInr: idea.estimatedCostInr,
       taskTitle: idea.taskTitle || null,
       status: "suggested" as const,

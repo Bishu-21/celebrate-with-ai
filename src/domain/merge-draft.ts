@@ -1,4 +1,5 @@
 import { isValidBudgetScenario } from "@/domain/budget";
+import { indexFirst } from "@/domain/index-first";
 import { sumAmounts } from "@/domain/money";
 import { buildLocalPlan } from "@/domain/local-plan";
 import { scheduleTasks } from "@/domain/timeline";
@@ -99,15 +100,19 @@ export function planFromDraft(
 
 export function checklistFromDraft(titles: string[], tasks: EventPlan["timelineTasks"]): ChecklistItem[] {
   const used = new Set<string>();
+  const exactTitle = indexFirst(tasks, (task) => task.title.toLowerCase());
   return titles.map((title, index) => {
     const normalized = title.toLowerCase();
-    const match = tasks.find((task) => {
-      if (used.has(task.id)) return false;
-      const taskTitle = task.title.toLowerCase();
-      if (taskTitle === normalized || normalized.includes(taskTitle) || taskTitle.includes(normalized)) return true;
-      const words = taskTitle.split(/[^a-z0-9]+/).filter((word) => word.length > 5);
-      return words.filter((word) => normalized.includes(word)).length >= 2;
-    });
+    const exact = exactTitle.get(normalized);
+    const match = exact && !used.has(exact.id)
+      ? exact
+      : tasks.find((task) => {
+          if (used.has(task.id)) return false;
+          const taskTitle = task.title.toLowerCase();
+          if (taskTitle === normalized || normalized.includes(taskTitle) || taskTitle.includes(normalized)) return true;
+          const words = taskTitle.split(/[^a-z0-9]+/).filter((word) => word.length > 5);
+          return words.filter((word) => normalized.includes(word)).length >= 2;
+        });
     if (match) used.add(match.id);
     return {
       id: `check-${index + 1}`,
@@ -140,6 +145,7 @@ export function applyTimelineDraft(plan: EventPlan, draft: GeminiTimelineDraft, 
 }
 
 export function applyTradeoffDraft(plan: EventPlan, draft: GeminiTradeoffDraft): EventPlan {
+  const linesByCategory = indexFirst(plan.budgetBreakdown, (line) => line.category);
   const scenarios = draft.scenarios
     .map((scenario) => ({
       id: scenario.id,
@@ -147,7 +153,7 @@ export function applyTradeoffDraft(plan: EventPlan, draft: GeminiTradeoffDraft):
       summary: scenario.summary || draft.summary,
       protectedPriority: plan.priorities[0] ?? "catering",
       lines: scenario.lines.map((line) => {
-        const existing = plan.budgetBreakdown.find((item) => item.category === line.category);
+        const existing = linesByCategory.get(line.category);
         return existing && (!existing.isEstimated || existing.origin === "quote") && existing.amountInr === line.amountInr
           ? existing : { ...line, isEstimated: true, origin: "gemini" as const };
       }),

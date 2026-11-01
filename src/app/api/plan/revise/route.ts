@@ -4,7 +4,7 @@ import { isRealIsoDate } from "@/domain/money";
 import { advisoryScope, constraintDeltaIsSettled, mergeConstraintDelta, parseConstraintChange, revisePlan } from "@/domain/revision";
 import type { EventPlan } from "@/domain/types";
 import { extractConstraintDelta, reviseEventPlan } from "@/lib/gemini";
-import { invalid, readBody } from "@/lib/http";
+import { invalid, readJson } from "@/lib/http";
 import { reviseRequestSchema } from "@/lib/schemas";
 
 function applyNotes(plan: EventPlan, timeline: { timelineTasks: Array<{ id: string; note: string }> } | null): EventPlan {
@@ -20,11 +20,8 @@ function applyNotes(plan: EventPlan, timeline: { timelineTasks: Array<{ id: stri
 }
 
 export async function POST(request: Request) {
-  const body = await readBody(request);
-  if (!body.ok) return body.response;
-
-  const parsed = reviseRequestSchema.safeParse(body.data);
-  if (!parsed.success) return invalid("The current plan and the revision note need to be valid.");
+  const parsed = await readJson(request, reviseRequestSchema, "The current plan and the revision note need to be valid.");
+  if (!parsed.ok) return parsed.response;
 
   const today = parsed.data.today && isRealIsoDate(parsed.data.today) ? parsed.data.today : new Date().toISOString().slice(0, 10);
   let delta = parseConstraintChange(parsed.data.instruction, parsed.data.plan.budgetInr, parsed.data.plan.eventDate);

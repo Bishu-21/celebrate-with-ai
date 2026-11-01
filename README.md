@@ -64,7 +64,10 @@ Attempt 1:
 - Saving a plan reuses the parsed copy already in memory when the browser text has not changed.
 - The rate limiter keeps a sliding window per caller and prunes the key map in batches.
 - Currency and guest totals reuse one formatter and one pass over the guest list.
-- Budget rows, timeline tasks, and the checklist skip re-rendering when their data and callbacks have not changed.
+- Budget rows, timeline tasks, the checklist, the vendor board, and the ideas board skip re-rendering when their data and callbacks have not changed. Planner callbacks are stable across unrelated state updates. Guest, checklist, budget, and vendor-brief lookups use a map for the current plan.
+- A checklist title matches a task by an exact-title index before any fuzzy scan. Trade-off lines and vendor commentary join by category or quote id, and the first match wins.
+- The revision parser compiles its patterns once. The Gemini client caches the hash of each response schema, so an in-flight duplicate does not serialize that schema again.
+- The React Compiler memoizes component output during the production build. `src/lib/gemini.ts` imports `server-only`, so the Gemini SDK stays out of the browser bundle.
 - Fonts use `display: "swap"` so text stays readable while Instrument Serif and Inter load.
 
 ## Security & Accessibility

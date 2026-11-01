@@ -5,6 +5,7 @@ const isDev = process.env.NODE_ENV !== "production";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  reactCompiler: true,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders(isDev) }];
   },

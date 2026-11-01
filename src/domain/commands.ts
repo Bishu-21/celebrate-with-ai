@@ -151,8 +151,13 @@ function applyCommand(plan: EventPlan, command: PlanCommand): CommandResult {
   }
 
   if (command.type === "set-idea-status") {
-    const ideas = (plan.ideas ?? []).map((idea) => (idea.id === command.ideaId ? { ...idea, status: command.status } : idea));
-    if (!ideas.some((idea) => idea.id === command.ideaId)) return reject(plan, "That idea is not on this plan.");
+    let found = false;
+    const ideas = (plan.ideas ?? []).map((idea) => {
+      if (idea.id !== command.ideaId) return idea;
+      found = true;
+      return { ...idea, status: command.status };
+    });
+    if (!found) return reject(plan, "That idea is not on this plan.");
     return { ok: true, warning: null, plan: { ...plan, ideas } };
   }
 

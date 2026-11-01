@@ -7,6 +7,10 @@ export function capturePlanVersion(): PlanVersion {
   return { planId: plan?.id ?? null, revision: getPlanRevision() };
 }
 
+export function errorText(reason: unknown, fallback: string): string {
+  return reason instanceof Error ? reason.message : fallback;
+}
+
 export function assertPlanVersion(expected: PlanVersion): void {
   const current = capturePlanVersion();
   if (expected.planId !== current.planId || expected.revision !== current.revision) {

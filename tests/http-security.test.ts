@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readBody } from "@/lib/http";
+import { z } from "zod";
+import { readBody, readJson } from "@/lib/http";
 import { clientKey } from "@/lib/rate-limit";
 
 function post(headers: Record<string, string>, body: string) {
@@ -82,5 +83,30 @@ describe("request security", () => {
     expect(clientKey(request)).toBe("local");
     vi.stubEnv("VERCEL", "1");
     expect(clientKey(request)).toBe("203.0.113.10");
+  });
+
+  it("returns parsed JSON when the body matches the schema", async () => {
+    const request = new Request("http://localhost/api/plan/ideas", {
+      method: "POST",
+      headers: { origin: "http://localhost", "content-type": "application/json" },
+      body: JSON.stringify({ plan: { title: "Holi" } }),
+    });
+    const result = await readJson(request, z.object({ plan: z.object({ title: z.string() }) }), "Ideas need a valid plan.");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.plan.title).toBe("Holi");
+  });
+
+  it("returns the caller message when JSON fails the schema", async () => {
+    const request = new Request("http://localhost/api/plan/ideas", {
+      method: "POST",
+      headers: { origin: "http://localhost", "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const result = await readJson(request, z.object({ plan: z.object({ title: z.string() }) }), "Ideas need a valid plan.");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(400);
+    await expect(result.response.json()).resolves.toMatchObject({ error: "Ideas need a valid plan." });
   });
 });

@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { formatInr } from "@/domain/money";
 import { CATEGORIES, CATEGORY_LABELS, type Category, type VendorComparisonRow, type VendorQuote } from "@/domain/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Field, selectFieldClass, TextArea, TextInput } from "@/components/ui/Field";
 
-export function VendorBoard({
+export const VendorBoard = memo(function VendorBoard({
   category,
   capInr,
   questions,
@@ -142,4 +142,4 @@ export function VendorBoard({
       ) : null}
     </section>
   );
-}
+});
